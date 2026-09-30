@@ -5,13 +5,16 @@ import {
   Alert,
   Animated,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
+import { createMMKV } from "react-native-mmkv";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import TranslateText, {
@@ -25,14 +28,41 @@ import {
 } from "expo-speech-recognition";
 
 const MODEL_READY_KEY = "konglish.translation-models-ready";
+const TRANSCRIPT_STORAGE_KEY = "konglish.completed-translations";
 const SPEECH_STABILITY_DELAY_MS = 400;
 const FINAL_DUPLICATE_WINDOW_MS = 2500;
+const transcriptStorage = createMMKV({ id: "konglish-transcripts" });
 
 type TranscriptEntry = {
+  id: string;
   sequence: number;
   ko: string;
   en: string;
   timestamp: string;
+};
+
+const loadSavedTranscript = (): TranscriptEntry[] => {
+  try {
+    const savedTranscript = transcriptStorage.getString(TRANSCRIPT_STORAGE_KEY);
+    if (!savedTranscript) return [];
+
+    const parsedTranscript: unknown = JSON.parse(savedTranscript);
+    if (!Array.isArray(parsedTranscript)) return [];
+
+    return parsedTranscript.filter(
+      (entry): entry is TranscriptEntry =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof entry.id === "string" &&
+        typeof entry.sequence === "number" &&
+        typeof entry.ko === "string" &&
+        typeof entry.en === "string" &&
+        typeof entry.timestamp === "string",
+    );
+  } catch (error) {
+    console.warn("Could not load saved translations:", error);
+    return [];
+  }
 };
 
 export default function HomeScreen() {
@@ -47,9 +77,12 @@ export default function HomeScreen() {
   const [isListeningEnabled, setIsListeningEnabled] = useState(true);
   const [speechStatus, setSpeechStatus] = useState("Starting microphone...");
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [sessionTranscript, setSessionTranscript] = useState<TranscriptEntry[]>(
-    [],
-  );
+  const [sessionTranscript, setSessionTranscript] =
+    useState<TranscriptEntry[]>(loadSavedTranscript);
+  const sessionTranscriptRef = useRef(sessionTranscript);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editKoreanText, setEditKoreanText] = useState("");
+  const [editEnglishText, setEditEnglishText] = useState("");
   const modelReadyRef = useRef(false);
   const shouldListenRef = useRef(true);
   const isStartingRef = useRef(false);
@@ -69,12 +102,67 @@ export default function HomeScreen() {
     new Map<string, Promise<string | null>>(),
   );
   const recentFinalTextsRef = useRef(new Map<string, number>());
-  const transcriptSequenceRef = useRef(0);
+  const transcriptSequenceRef = useRef(
+    sessionTranscript.reduce(
+      (highest, entry) => Math.max(highest, entry.sequence),
+      0,
+    ),
+  );
   const onDeviceRecognitionAvailableRef = useRef<boolean | null>(null);
   const usingOnDeviceRecognitionRef = useRef(false);
   const retryProvisionRef = useRef<() => void>(() => {});
   const startListeningRef = useRef<() => Promise<void>>(async () => {});
   const [soundLevel] = useState(() => new Animated.Value(0));
+
+  const updateSavedTranscript = (
+    update: (entries: TranscriptEntry[]) => TranscriptEntry[],
+  ) => {
+    const updatedEntries = update(sessionTranscriptRef.current);
+    sessionTranscriptRef.current = updatedEntries;
+    transcriptStorage.set(
+      TRANSCRIPT_STORAGE_KEY,
+      JSON.stringify(updatedEntries),
+    );
+    setSessionTranscript(updatedEntries);
+  };
+
+  const startEditingEntry = (entry: TranscriptEntry) => {
+    setEditingEntryId(entry.id);
+    setEditKoreanText(entry.ko);
+    setEditEnglishText(entry.en);
+  };
+
+  const saveEditedEntry = () => {
+    const korean = editKoreanText.trim();
+    const english = editEnglishText.trim();
+    if (!korean || !english || !editingEntryId) {
+      Alert.alert("Text required", "Enter both the Korean and English text.");
+      return;
+    }
+
+    updateSavedTranscript((entries) =>
+      entries.map((entry) =>
+        entry.id === editingEntryId
+          ? { ...entry, ko: korean, en: english }
+          : entry,
+      ),
+    );
+    setEditingEntryId(null);
+  };
+
+  const confirmDeleteEntry = (entry: TranscriptEntry) => {
+    Alert.alert("Delete completed translation?", "This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () =>
+          updateSavedTranscript((entries) =>
+            entries.filter((savedEntry) => savedEntry.id !== entry.id),
+          ),
+      },
+    ]);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -458,10 +546,17 @@ export default function HomeScreen() {
         const translation = await translateKorean(recognizedKorean);
         if (!isMounted || translation === null) return;
 
-        setSessionTranscript((entries) =>
+        const id = `${now}-${sequence}`;
+        updateSavedTranscript((entries) =>
           [
             ...entries,
-            { sequence, ko: recognizedKorean, en: translation, timestamp },
+            {
+              id,
+              sequence,
+              ko: recognizedKorean,
+              en: translation,
+              timestamp,
+            },
           ].sort((first, second) => first.sequence - second.sequence),
         );
         return;
@@ -788,21 +883,83 @@ export default function HomeScreen() {
           <View style={styles.historySection}>
             <Text style={styles.historyHeader}>Completed sentences</Text>
             {[...sessionTranscript].reverse().map((entry, index) => (
-              <View
-                key={`${entry.timestamp}-${index}`}
-                style={styles.historyRow}
-              >
+              <View key={entry.id} style={styles.historyRow}>
                 <Text style={styles.historyMeta}>
                   Sentence {sessionTranscript.length - index} ·{" "}
                   {entry.timestamp}
                 </Text>
                 <Text style={styles.historyKo}>KR: {entry.ko}</Text>
                 <Text style={styles.historyEn}>EN: {entry.en}</Text>
+                <View style={styles.entryActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit completed translation"
+                    onPress={() => startEditingEntry(entry)}
+                    style={styles.entryActionButton}
+                  >
+                    <Text style={styles.entryActionText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete completed translation"
+                    onPress={() => confirmDeleteEntry(entry)}
+                    style={styles.entryActionButton}
+                  >
+                    <Text style={styles.deleteActionText}>Delete</Text>
+                  </Pressable>
+                </View>
               </View>
             ))}
           </View>
         ) : null}
       </ScrollView>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={editingEntryId !== null}
+        onRequestClose={() => setEditingEntryId(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.editSheet}>
+            <Text style={styles.editTitle}>Edit completed text</Text>
+            <Text style={styles.editLabel}>Korean</Text>
+            <TextInput
+              multiline
+              value={editKoreanText}
+              onChangeText={setEditKoreanText}
+              placeholder="Korean source text"
+              placeholderTextColor="#87938D"
+              style={styles.editInput}
+            />
+            <Text style={styles.editLabel}>English</Text>
+            <TextInput
+              multiline
+              value={editEnglishText}
+              onChangeText={setEditEnglishText}
+              placeholder="English translation"
+              placeholderTextColor="#87938D"
+              style={styles.editInput}
+            />
+            <View style={styles.editActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setEditingEntryId(null)}
+                style={styles.cancelEditButton}
+              >
+                <Text style={styles.cancelEditText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={saveEditedEntry}
+                style={styles.saveEditButton}
+              >
+                <Text style={styles.saveEditText}>Save changes</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.footer}>
         <View style={[styles.onlineDot, !isRecording && styles.offlineDot]} />
@@ -1028,6 +1185,95 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 20,
     marginTop: 4,
+  },
+  entryActions: {
+    borderTopColor: "#E8ECE8",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 18,
+    marginTop: 12,
+    paddingTop: 9,
+  },
+  entryActionButton: {
+    minHeight: 30,
+    justifyContent: "center",
+  },
+  entryActionText: {
+    color: "#186B52",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  deleteActionText: {
+    color: "#A53A31",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 28, 22, 0.48)",
+    justifyContent: "center",
+    padding: 22,
+  },
+  editSheet: {
+    backgroundColor: "#F3F5F0",
+    borderRadius: 8,
+    padding: 20,
+  },
+  editTitle: {
+    color: "#15241E",
+    fontSize: 19,
+    fontWeight: "700",
+    marginBottom: 18,
+  },
+  editLabel: {
+    color: "#718078",
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: 6,
+    textTransform: "uppercase",
+  },
+  editInput: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#DDE5DE",
+    borderRadius: 6,
+    borderWidth: 1,
+    color: "#15241E",
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 14,
+    minHeight: 72,
+    padding: 11,
+    textAlignVertical: "top",
+  },
+  editActions: {
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "flex-end",
+    marginTop: 4,
+  },
+  cancelEditButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 12,
+  },
+  cancelEditText: {
+    color: "#53645D",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  saveEditButton: {
+    alignItems: "center",
+    backgroundColor: "#186B52",
+    borderRadius: 6,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 15,
+  },
+  saveEditText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
   footer: {
     alignItems: "flex-start",
