@@ -46,13 +46,6 @@
         }
       ],
       [
-        "@react-native-voice/voice",
-        {
-          "microphonePermission": "This app requires live microphone access to record and translate spoken Korean words into English text in real time.",
-          "speechRecognitionPermission": "This app uses speech recognition to transcribe spoken Korean into English text in real time."
-        }
-      ],
-      [
         "expo-file-system",
         {
           "supportsOpeningDocumentsInPlace": true,
@@ -69,14 +62,12 @@
         }
       ],
       [
-        "expo-audio",
+        "expo-speech-recognition",
         {
           "microphonePermission": "This app requires live microphone access to record and translate spoken Korean words into English text in real time.",
-          "recordAudioAndroid": true,
-          "enableBackgroundPlayback": false
+          "speechRecognitionPermission": "This app uses speech recognition to transcribe spoken Korean into English text in real time."
         }
-      ],
-      "expo-speech-recognition"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

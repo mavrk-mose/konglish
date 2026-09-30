@@ -5,7 +5,6 @@ import {
   Alert,
   Animated,
   Linking,
-  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -18,16 +17,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import TranslateText, {
   TranslateLanguage,
 } from "@react-native-ml-kit/translate-text";
-import Voice, {
-  SpeechErrorEvent,
-  SpeechResultsEvent,
-} from "@react-native-voice/voice";
-import {
-  getRecordingPermissionsAsync,
-  requestRecordingPermissionsAsync,
-} from "expo-audio";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import {
+  ExpoSpeechRecognitionModule,
+  type ExpoSpeechRecognitionResultEvent,
+} from "expo-speech-recognition";
 
 const MODEL_READY_KEY = "konglish.translation-models-ready";
 
@@ -105,43 +100,25 @@ export default function HomeScreen() {
     };
 
     const ensureRecordingPermissions = async () => {
-      const voiceModule = NativeModules.Voice as
-        | { isSpeechAvailable?: unknown }
-        | null
-        | undefined;
-
-      if (!voiceModule || typeof voiceModule.isSpeechAvailable !== "function") {
-        const message =
-          "Speech recognition is not included in this app build. Install a new Konglish development build with the native voice module, then try again.";
-        shouldListenRef.current = false;
-        isRecordingRef.current = false;
-        setIsRecording(false);
-        setIsListeningEnabled(false);
-        setSpeechError(message);
-        setSpeechStatus("Speech recognition module unavailable");
-        Alert.alert("App update required", message, [{ text: "OK" }]);
-        return false;
+      let permissions = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+      if (!permissions.granted) {
+        permissions =
+          await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       }
 
-      let microphonePermission = await getRecordingPermissionsAsync();
-      if (!microphonePermission.granted) {
-        microphonePermission = await requestRecordingPermissionsAsync();
-      }
-
-      if (!microphonePermission.granted) {
+      if (!permissions.granted) {
         showSettingsPrompt(
-          "Microphone access needed",
-          "Konglish needs microphone access to transcribe and translate spoken Korean. Enable microphone access in Settings to continue.",
-          microphonePermission.canAskAgain,
+          "Microphone and speech access needed",
+          "Konglish needs microphone and speech-recognition access to transcribe and translate spoken Korean. Enable both permissions in Settings to continue.",
+          permissions.canAskAgain,
         );
         return false;
       }
 
-      const speechRecognitionAvailable = await Voice.isAvailable();
-      if (!speechRecognitionAvailable) {
+      if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
         showSettingsPrompt(
-          "Speech recognition access needed",
-          "Konglish needs speech-recognition access to transcribe spoken Korean. Enable Speech Recognition for Konglish in Settings to continue.",
+          "Speech recognition unavailable",
+          "No speech recognition service is available on this device. Enable or install a speech recognition service, then try again.",
           false,
         );
         return false;
@@ -150,13 +127,13 @@ export default function HomeScreen() {
       return true;
     };
 
-    const scheduleRestart = () => {
+    const scheduleRestart = (delay = 600) => {
       if (!isMounted || !shouldListenRef.current || restartTimeout) return;
 
       restartTimeout = setTimeout(() => {
         restartTimeout = null;
         void startListening();
-      }, 600);
+      }, delay);
     };
 
     const startListening = async () => {
@@ -183,11 +160,15 @@ export default function HomeScreen() {
         const hasPermissions = await ensureRecordingPermissions();
         if (!hasPermissions) return;
 
-        await Voice.start("ko-KR");
+        ExpoSpeechRecognitionModule.start({
+          lang: "ko-KR",
+          interimResults: true,
+          continuous: true,
+          maxAlternatives: 1,
+          volumeChangeEventOptions: { enabled: true, intervalMillis: 100 },
+        });
         if (isMounted && shouldListenRef.current) {
-          isRecordingRef.current = true;
-          setIsRecording(true);
-          setSpeechStatus("Listening for Korean speech...");
+          setSpeechStatus("Starting Korean speech recognition...");
         }
       } catch (error) {
         const message =
@@ -270,8 +251,10 @@ export default function HomeScreen() {
       void prepareLocalTranslationModels();
     };
 
-    const handleSpeechPartialResults = async (event: SpeechResultsEvent) => {
-      const recognizedKorean = event.value?.[0];
+    const handleSpeechResults = async (
+      event: ExpoSpeechRecognitionResultEvent,
+    ) => {
+      const recognizedKorean = event.results[0]?.transcript;
       if (!recognizedKorean || !modelReadyRef.current) return;
 
       const requestId = ++translationRequestRef.current;
@@ -286,104 +269,90 @@ export default function HomeScreen() {
         if (requestId === translationRequestRef.current) {
           setEnglishText(result as string);
         }
+        if (event.isFinal) {
+          setSessionTranscript((entries) => [
+            ...entries,
+            {
+              ko: recognizedKorean,
+              en: result as string,
+              timestamp: new Date().toLocaleTimeString(),
+            },
+          ]);
+        }
       } catch (error) {
         console.error("Local translation failed:", error);
       }
     };
 
-    const handleSpeechResults = async (event: SpeechResultsEvent) => {
-      const finalKorean = event.value?.[0];
-      if (!finalKorean || !modelReadyRef.current) return;
+    const subscriptions = [
+      ExpoSpeechRecognitionModule.addListener("result", handleSpeechResults),
+      ExpoSpeechRecognitionModule.addListener("start", () => {
+        isStartingRef.current = false;
+        isRecordingRef.current = true;
+        setIsRecording(true);
+        setSpeechError(null);
+        setSpeechStatus("Listening for Korean speech...");
+      }),
+      ExpoSpeechRecognitionModule.addListener("end", () => {
+        isStartingRef.current = false;
+        isRecordingRef.current = false;
+        setIsRecording(false);
+        soundLevel.setValue(0);
+        if (shouldListenRef.current) {
+          setSpeechStatus("Listening paused; restarting microphone...");
+          scheduleRestart();
+        }
+      }),
+      ExpoSpeechRecognitionModule.addListener("error", (event) => {
+        const message = event.message || event.error;
+        isStartingRef.current = false;
+        isRecordingRef.current = false;
+        setIsRecording(false);
+        soundLevel.setValue(0);
 
-      try {
-        const finalEnglish = await TranslateText.translate({
-          text: finalKorean,
-          sourceLanguage: TranslateLanguage.KOREAN,
-          targetLanguage: TranslateLanguage.ENGLISH,
-          downloadModelIfNeeded: false,
-        });
-        setKoreanText(finalKorean);
-        setEnglishText(finalEnglish as string);
-        setSessionTranscript((entries) => [
-          ...entries,
-          {
-            ko: finalKorean,
-            en: finalEnglish as string,
-            timestamp: new Date().toLocaleTimeString(),
-          },
-        ]);
-      } catch (error) {
-        console.error("Could not commit translated sentence:", error);
-      }
-    };
-
-    Voice.onSpeechPartialResults = handleSpeechPartialResults;
-    Voice.onSpeechResults = handleSpeechResults;
-    Voice.onSpeechStart = () => {
-      isRecordingRef.current = true;
-      setIsRecording(true);
-      setSpeechError(null);
-      setSpeechStatus("Listening for Korean speech...");
-    };
-    Voice.onSpeechEnd = () => {
-      isRecordingRef.current = false;
-      setIsRecording(false);
-      soundLevel.setValue(0);
-      if (shouldListenRef.current) {
-        setSpeechStatus("Listening paused; restarting microphone...");
-        scheduleRestart();
-      }
-    };
-    Voice.onSpeechError = (event: SpeechErrorEvent) => {
-      const errorPayload: unknown = event.error;
-      const message =
-        (typeof errorPayload === "string" && errorPayload) ||
-        (errorPayload &&
-        typeof errorPayload === "object" &&
-        "message" in errorPayload &&
-        typeof errorPayload.message === "string"
-          ? errorPayload.message
-          : null) ||
-        (errorPayload &&
-        typeof errorPayload === "object" &&
-        "code" in errorPayload &&
-        typeof errorPayload.code === "string"
-          ? errorPayload.code
-          : null) ||
-        "Speech recognition stopped unexpectedly.";
-      console.error("Speech recognition failed:", message);
-      isRecordingRef.current = false;
-      setIsRecording(false);
-      soundLevel.setValue(0);
-
-      if (/permission|denied|not allowed|not available/i.test(message)) {
-        shouldListenRef.current = false;
-        setIsListeningEnabled(false);
-        setSpeechError(
-          /permission|denied|not allowed/i.test(message)
-            ? "Allow microphone and speech-recognition access in device settings, then tap Start listening."
-            : "Speech recognition is unavailable on this device right now. Tap Start listening to retry.",
-        );
-        setSpeechStatus(
-          /permission|denied|not allowed/i.test(message)
-            ? "Microphone permission is required"
-            : "Speech recognition is unavailable",
-        );
-      } else if (shouldListenRef.current) {
-        setSpeechStatus("Speech paused; restarting microphone...");
-        scheduleRestart();
-      } else {
-        setSpeechStatus("Listening stopped");
-      }
-    };
-    Voice.onSpeechVolumeChanged = (event) => {
-      const level = Math.max(0, Math.min(1, (event.value ?? 0) / 10));
-      Animated.timing(soundLevel, {
-        toValue: level,
-        duration: 100,
-        useNativeDriver: true,
-      }).start();
-    };
+        if (event.error === "aborted") {
+          if (shouldListenRef.current) scheduleRestart();
+        } else if (
+          event.error === "no-speech" ||
+          event.error === "speech-timeout"
+        ) {
+          if (shouldListenRef.current) {
+            setSpeechStatus("No speech heard; continuing to listen...");
+            scheduleRestart(900);
+          }
+        } else if (event.error === "not-allowed") {
+          console.warn("Speech recognition permission denied:", message);
+          showSettingsPrompt(
+            "Microphone and speech access needed",
+            "Konglish was denied microphone or speech-recognition access. Enable both permissions in Settings, then tap Start listening.",
+            false,
+          );
+        } else if (event.error === "service-not-allowed") {
+          console.warn("Speech recognition service unavailable:", message);
+          shouldListenRef.current = false;
+          setIsListeningEnabled(false);
+          setSpeechError(
+            "No speech recognition service is available on this device.",
+          );
+          setSpeechStatus("Speech recognition unavailable");
+        } else if (shouldListenRef.current) {
+          console.warn("Speech recognition failed:", event.error, message);
+          setSpeechStatus("Speech paused; restarting microphone...");
+          scheduleRestart(1000);
+        } else {
+          console.warn("Speech recognition stopped:", event.error, message);
+          setSpeechStatus(message || "Listening stopped");
+        }
+      }),
+      ExpoSpeechRecognitionModule.addListener("volumechange", (event) => {
+        const level = Math.max(0, Math.min(1, event.value / 10));
+        Animated.timing(soundLevel, {
+          toValue: level,
+          duration: 100,
+          useNativeDriver: true,
+        }).start();
+      }),
+    ];
 
     retryProvisionRef.current();
 
@@ -391,9 +360,8 @@ export default function HomeScreen() {
       isMounted = false;
       shouldListenRef.current = false;
       if (restartTimeout) clearTimeout(restartTimeout);
-      void Voice.destroy()
-        .catch(() => undefined)
-        .finally(() => Voice.removeAllListeners());
+      ExpoSpeechRecognitionModule.abort();
+      subscriptions.forEach((subscription) => subscription.remove());
     };
   }, [soundLevel]);
 
@@ -408,7 +376,7 @@ export default function HomeScreen() {
       setSpeechError(null);
       setSpeechStatus("Listening stopped");
       try {
-        await Voice.stop();
+        ExpoSpeechRecognitionModule.stop();
       } catch (error) {
         console.error("Voice engine stop failed:", error);
       }
