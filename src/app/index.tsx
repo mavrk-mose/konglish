@@ -5,6 +5,7 @@ import {
   Alert,
   Animated,
   Linking,
+  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -104,6 +105,24 @@ export default function HomeScreen() {
     };
 
     const ensureRecordingPermissions = async () => {
+      const voiceModule = NativeModules.Voice as
+        | { isSpeechAvailable?: unknown }
+        | null
+        | undefined;
+
+      if (!voiceModule || typeof voiceModule.isSpeechAvailable !== "function") {
+        const message =
+          "Speech recognition is not included in this app build. Install a new Konglish development build with the native voice module, then try again.";
+        shouldListenRef.current = false;
+        isRecordingRef.current = false;
+        setIsRecording(false);
+        setIsListeningEnabled(false);
+        setSpeechError(message);
+        setSpeechStatus("Speech recognition module unavailable");
+        Alert.alert("App update required", message, [{ text: "OK" }]);
+        return false;
+      }
+
       let microphonePermission = await getRecordingPermissionsAsync();
       if (!microphonePermission.granted) {
         microphonePermission = await requestRecordingPermissionsAsync();

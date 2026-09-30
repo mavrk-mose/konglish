@@ -75,7 +75,8 @@
           "recordAudioAndroid": true,
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      "expo-speech-recognition"
     ],
     "experiments": {
       "typedRoutes": true,
