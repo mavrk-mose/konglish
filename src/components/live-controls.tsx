@@ -1,17 +1,23 @@
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 
+import type { TranslationDirection } from "@/types/translation";
+
 type LiveControlsProps = {
+  direction: TranslationDirection;
   isRecording: boolean;
   isListeningEnabled: boolean;
   soundLevel: Animated.Value;
+  onDirectionChange: (direction: TranslationDirection) => void;
   onToggleListening: () => void;
   onExport: () => void;
 };
 
 export function LiveControls({
+  direction,
   isRecording,
   isListeningEnabled,
   soundLevel,
+  onDirectionChange,
   onToggleListening,
   onExport,
 }: LiveControlsProps) {
@@ -20,10 +26,54 @@ export function LiveControls({
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>KONGLISH / LIVE</Text>
-          <Text style={styles.title}>Korean, in the moment.</Text>
+          <Text style={styles.title}>Korean and English, live.</Text>
         </View>
         <View style={styles.readyMark}>
           <Text style={styles.readyMarkText}>KO / EN</Text>
+        </View>
+      </View>
+
+      <View style={styles.directionSection}>
+        <Text style={styles.directionLabel}>Translation direction</Text>
+        <View style={styles.directionPicker}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Translate Korean to English"
+            accessibilityState={{ selected: direction === "ko-to-en" }}
+            onPress={() => onDirectionChange("ko-to-en")}
+            style={[
+              styles.directionOption,
+              direction === "ko-to-en" && styles.directionOptionSelected,
+            ]}
+          >
+            <Text
+              style={[
+                styles.directionOptionText,
+                direction === "ko-to-en" && styles.directionOptionTextSelected,
+              ]}
+            >
+              Korean to English
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Translate English to Korean"
+            accessibilityState={{ selected: direction === "en-to-ko" }}
+            onPress={() => onDirectionChange("en-to-ko")}
+            style={[
+              styles.directionOption,
+              direction === "en-to-ko" && styles.directionOptionSelected,
+            ]}
+          >
+            <Text
+              style={[
+                styles.directionOptionText,
+                direction === "en-to-ko" && styles.directionOptionTextSelected,
+              ]}
+            >
+              English to Korean
+            </Text>
+          </Pressable>
         </View>
       </View>
 
@@ -78,7 +128,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 34,
+    marginBottom: 20,
   },
   eyebrow: {
     color: "#527468",
@@ -103,6 +153,44 @@ const styles = StyleSheet.create({
   readyMarkText: {
     color: "#186B52",
     fontSize: 11,
+    fontWeight: "700",
+  },
+  directionSection: {
+    marginBottom: 18,
+  },
+  directionLabel: {
+    color: "#718078",
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: 7,
+    textTransform: "uppercase",
+  },
+  directionPicker: {
+    backgroundColor: "#E2EAE3",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 4,
+    padding: 4,
+  },
+  directionOption: {
+    alignItems: "center",
+    borderRadius: 6,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: 6,
+  },
+  directionOptionSelected: {
+    backgroundColor: "#FFFFFF",
+  },
+  directionOptionText: {
+    color: "#53645D",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  directionOptionTextSelected: {
+    color: "#186B52",
     fontWeight: "700",
   },
   actions: {

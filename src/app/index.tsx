@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -11,8 +11,10 @@ import { useSpeechTranslation } from "@/hooks/use-speech-translation";
 import { useTranscript } from "@/hooks/use-transcript";
 import { useTranslationModels } from "@/hooks/use-translation-models";
 import type { TranscriptEntry } from "@/types/transcript";
+import type { TranslationDirection } from "@/types/translation";
 
 export default function HomeScreen() {
+  const [direction, setDirection] = useState<TranslationDirection>("ko-to-en");
   const {
     entries,
     updateSavedTranscript,
@@ -49,6 +51,7 @@ export default function HomeScreen() {
   );
   const speech = useSpeechTranslation({
     enabled: isReady,
+    direction,
     initialSequence,
     onTranscriptComplete: appendTranscriptEntry,
   });
@@ -66,21 +69,29 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <LiveControls
+        direction={direction}
         isRecording={speech.isRecording}
         isListeningEnabled={speech.isListeningEnabled}
         soundLevel={speech.soundLevel}
+        onDirectionChange={setDirection}
         onToggleListening={() => void speech.toggleListening()}
         onExport={() =>
           void exportSessionLog(
-            speech.koreanText,
-            speech.englishText,
+            direction === "ko-to-en"
+              ? speech.sourceText
+              : speech.translationText,
+            direction === "ko-to-en"
+              ? speech.translationText
+              : speech.sourceText,
             speech.isRecording,
           )
         }
       />
       <LiveTranscript
-        koreanText={speech.koreanText}
-        englishText={speech.englishText}
+        sourceText={speech.sourceText}
+        translationText={speech.translationText}
+        sourceLanguage={direction === "ko-to-en" ? "Korean" : "English"}
+        targetLanguage={direction === "ko-to-en" ? "English" : "Korean"}
         entries={entries}
         onEditEntry={startEditingEntry}
         onDeleteEntry={confirmDeleteEntry}

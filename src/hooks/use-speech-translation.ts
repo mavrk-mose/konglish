@@ -10,34 +10,40 @@ import {
 } from "expo-speech-recognition";
 
 import type { TranscriptEntry } from "@/types/transcript";
+import type { TranslationDirection } from "@/types/translation";
 
 const SPEECH_STABILITY_DELAY_MS = 400;
 const FINAL_DUPLICATE_WINDOW_MS = 2500;
 
 type SpeechTranslationOptions = {
   enabled: boolean;
+  direction?: TranslationDirection;
   initialSequence: number;
   onTranscriptComplete: (entry: TranscriptEntry) => void;
 };
 
 export function useSpeechTranslation({
   enabled,
+  direction = "ko-to-en",
   initialSequence,
   onTranscriptComplete,
 }: SpeechTranslationOptions) {
-  const [koreanText, setKoreanText] = useState("");
-  const [englishText, setEnglishText] = useState("");
+  const [sourceText, setSourceText] = useState("");
+  const [translationText, setTranslationText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isListeningEnabled, setIsListeningEnabled] = useState(true);
   const [status, setStatus] = useState("Starting microphone...");
   const [error, setError] = useState<string | null>(null);
   const [soundLevel] = useState(() => new Animated.Value(0));
   const enabledRef = useRef(enabled);
+  const directionRef = useRef(direction);
+  const activeRecognitionDirectionRef = useRef(direction);
+  const directionGenerationRef = useRef(0);
   const shouldListenRef = useRef(true);
   const isStartingRef = useRef(false);
   const isRecordingRef = useRef(false);
   const translationRequestRef = useRef(0);
-  const latestKoreanTextRef = useRef("");
+  const latestSourceTextRef = useRef("");
   const pendingInterimTextRef = useRef("");
   const stabilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -60,6 +66,37 @@ export function useSpeechTranslation({
     enabledRef.current = enabled;
     if (enabled) void startListeningRef.current();
   }, [enabled]);
+
+  useEffect(() => {
+    if (directionRef.current === direction) return;
+
+    directionRef.current = direction;
+    directionGenerationRef.current += 1;
+    translationRequestRef.current += 1;
+    latestSourceTextRef.current = "";
+    pendingInterimTextRef.current = "";
+    recentFinalTextsRef.current.clear();
+    lastTranslatedTextRef.current = "";
+    lastTranslationResultRef.current = null;
+    inFlightTranslationsRef.current.clear();
+    if (stabilityTimeoutRef.current) {
+      clearTimeout(stabilityTimeoutRef.current);
+      stabilityTimeoutRef.current = null;
+    }
+    setSourceText("");
+    setTranslationText("");
+
+    if (!enabledRef.current || !shouldListenRef.current) return;
+    if (isRecordingRef.current) {
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch (stopError) {
+        console.error("Voice engine stop failed:", stopError);
+      }
+    } else if (!isStartingRef.current) {
+      void startListeningRef.current();
+    }
+  }, [direction]);
 
   useEffect(() => {
     let isMounted = true;
@@ -114,7 +151,7 @@ export function useSpeechTranslation({
       if (!permissions.granted) {
         showSettingsPrompt(
           "Microphone and speech access needed",
-          "Konglish needs microphone and speech-recognition access to transcribe and translate spoken Korean. Enable both permissions in Settings to continue.",
+          "Konglish needs microphone and speech-recognition access to transcribe and translate speech. Enable both permissions in Settings to continue.",
           permissions.canAskAgain,
         );
         return false;
@@ -183,6 +220,7 @@ export function useSpeechTranslation({
         return;
       }
 
+      const requestedDirection = directionRef.current;
       if (restartTimeout) {
         clearTimeout(restartTimeout);
         restartTimeout = null;
@@ -195,10 +233,14 @@ export function useSpeechTranslation({
       try {
         const hasPermissions = await ensureRecordingPermissions();
         if (!hasPermissions) return;
+        if (requestedDirection !== directionRef.current) return;
 
         const requiresOnDeviceRecognition =
-          await canUseOnDeviceKoreanRecognition();
+          requestedDirection === "ko-to-en"
+            ? await canUseOnDeviceKoreanRecognition()
+            : false;
         if (!isMounted || !shouldListenRef.current) return;
+        if (requestedDirection !== directionRef.current) return;
         usingOnDeviceRecognitionRef.current = requiresOnDeviceRecognition;
         if (__DEV__) {
           console.log(
@@ -206,8 +248,9 @@ export function useSpeechTranslation({
           );
         }
 
+        activeRecognitionDirectionRef.current = requestedDirection;
         ExpoSpeechRecognitionModule.start({
-          lang: "ko-KR",
+          lang: requestedDirection === "ko-to-en" ? "ko-KR" : "en-US",
           interimResults: true,
           continuous: true,
           maxAlternatives: 1,
@@ -219,7 +262,9 @@ export function useSpeechTranslation({
           },
         });
         if (isMounted && shouldListenRef.current) {
-          setStatus("Starting Korean speech recognition...");
+          setStatus(
+            `Starting ${requestedDirection === "ko-to-en" ? "Korean" : "English"} speech recognition...`,
+          );
         }
       } catch (startError) {
         const message =
@@ -244,16 +289,24 @@ export function useSpeechTranslation({
         }
       } finally {
         isStartingRef.current = false;
+        if (
+          isMounted &&
+          enabledRef.current &&
+          shouldListenRef.current &&
+          requestedDirection !== directionRef.current
+        ) {
+          void startListening();
+        }
       }
     };
 
     startListeningRef.current = startListening;
 
-    const updateKoreanTranscript = (text: string) => {
-      if (latestKoreanTextRef.current === text) return;
-      latestKoreanTextRef.current = text;
+    const updateSourceTranscript = (text: string) => {
+      if (latestSourceTextRef.current === text) return;
+      latestSourceTextRef.current = text;
       translationRequestRef.current += 1;
-      setKoreanText((current) => (current === text ? current : text));
+      setSourceText((current) => (current === text ? current : text));
     };
 
     const applyTranslation = (
@@ -269,7 +322,7 @@ export function useSpeechTranslation({
       }
 
       lastTranslationResultRef.current = { text, translation };
-      setEnglishText((current) =>
+      setTranslationText((current) =>
         current === translation ? current : translation,
       );
       if (__DEV__) {
@@ -278,10 +331,11 @@ export function useSpeechTranslation({
       return true;
     };
 
-    const translateKorean = async (korean: string) => {
-      const text = korean.trim().replace(/\s+/gu, " ");
+    const translateSourceText = async (sourceText: string) => {
+      const text = sourceText.trim().replace(/\s+/gu, " ");
       if (!text || !enabledRef.current) return null;
 
+      const currentDirection = directionRef.current;
       const requestId = ++translationRequestRef.current;
       const cachedTranslation = lastTranslationResultRef.current;
       if (cachedTranslation?.text === text) {
@@ -289,7 +343,7 @@ export function useSpeechTranslation({
           console.log(`[Translation] skipped duplicate: ${text}`);
         }
         if (isMounted && requestId === translationRequestRef.current) {
-          setEnglishText((current) =>
+          setTranslationText((current) =>
             current === cachedTranslation.translation
               ? current
               : cachedTranslation.translation,
@@ -326,8 +380,14 @@ export function useSpeechTranslation({
 
       const translationPromise = TranslateText.translate({
         text,
-        sourceLanguage: TranslateLanguage.KOREAN,
-        targetLanguage: TranslateLanguage.ENGLISH,
+        sourceLanguage:
+          currentDirection === "ko-to-en"
+            ? TranslateLanguage.KOREAN
+            : TranslateLanguage.ENGLISH,
+        targetLanguage:
+          currentDirection === "ko-to-en"
+            ? TranslateLanguage.ENGLISH
+            : TranslateLanguage.KOREAN,
         downloadModelIfNeeded: false,
       }).then((result) => result as string);
       inFlightTranslationsRef.current.set(text, translationPromise);
@@ -357,12 +417,16 @@ export function useSpeechTranslation({
     const handleSpeechResults = async (
       event: ExpoSpeechRecognitionResultEvent,
     ) => {
-      const recognizedKorean = event.results[0]?.transcript
+      const recognizedText = event.results[0]?.transcript
         ?.trim()
         .replace(/\s+/gu, " ");
-      if (!recognizedKorean || !enabledRef.current) return;
+      if (!recognizedText || !enabledRef.current) return;
 
-      updateKoreanTranscript(recognizedKorean);
+      const resultDirection = directionRef.current;
+      if (resultDirection !== activeRecognitionDirectionRef.current) return;
+      const directionGeneration = directionGenerationRef.current;
+
+      updateSourceTranscript(recognizedText);
 
       if (event.isFinal) {
         if (stabilityTimeoutRef.current) {
@@ -371,7 +435,7 @@ export function useSpeechTranslation({
         }
         pendingInterimTextRef.current = "";
         if (__DEV__) {
-          console.log(`[Speech] final: ${recognizedKorean}`);
+          console.log(`[Speech] final: ${recognizedText}`);
         }
 
         const now = Date.now();
@@ -380,61 +444,67 @@ export function useSpeechTranslation({
             recentFinalTextsRef.current.delete(text);
           }
         }
-        if (recentFinalTextsRef.current.has(recognizedKorean)) {
+        if (recentFinalTextsRef.current.has(recognizedText)) {
           if (__DEV__) {
-            console.log(`[Translation] skipped duplicate: ${recognizedKorean}`);
+            console.log(`[Translation] skipped duplicate: ${recognizedText}`);
           }
           return;
         }
-        recentFinalTextsRef.current.set(recognizedKorean, now);
+        recentFinalTextsRef.current.set(recognizedText, now);
 
         const sequence = ++transcriptSequenceRef.current;
         const timestamp = new Date(now).toLocaleTimeString();
-        const translation = await translateKorean(recognizedKorean);
-        if (!isMounted || translation === null) return;
+        const translation = await translateSourceText(recognizedText);
+        if (
+          !isMounted ||
+          translation === null ||
+          directionGeneration !== directionGenerationRef.current
+        ) {
+          return;
+        }
 
         onTranscriptComplete({
           id: `${now}-${sequence}`,
           sequence,
-          ko: recognizedKorean,
-          en: translation,
+          ko: resultDirection === "ko-to-en" ? recognizedText : translation,
+          en: resultDirection === "ko-to-en" ? translation : recognizedText,
           timestamp,
         });
         return;
       }
 
       if (__DEV__) {
-        console.log(`[Speech] interim: ${recognizedKorean}`);
+        console.log(`[Speech] interim: ${recognizedText}`);
       }
-      if (pendingInterimTextRef.current === recognizedKorean) return;
+      if (pendingInterimTextRef.current === recognizedText) return;
 
-      pendingInterimTextRef.current = recognizedKorean;
+      pendingInterimTextRef.current = recognizedText;
       if (stabilityTimeoutRef.current) {
         clearTimeout(stabilityTimeoutRef.current);
       }
       stabilityTimeoutRef.current = setTimeout(() => {
         stabilityTimeoutRef.current = null;
         if (
-          pendingInterimTextRef.current !== recognizedKorean ||
-          latestKoreanTextRef.current !== recognizedKorean ||
+          pendingInterimTextRef.current !== recognizedText ||
+          latestSourceTextRef.current !== recognizedText ||
           !shouldListenRef.current
         ) {
           return;
         }
 
         const boundaries = [
-          ...recognizedKorean.matchAll(
+          ...recognizedText.matchAll(
             /(?:습니다|어요|네요|죠|다|요)?[.!?]+\s+/gu,
           ),
         ];
         const lastBoundary = boundaries[boundaries.length - 1];
         const sentence =
           lastBoundary?.index === undefined
-            ? recognizedKorean
-            : recognizedKorean
+            ? recognizedText
+            : recognizedText
                 .slice(lastBoundary.index + lastBoundary[0].length)
-                .trim() || recognizedKorean;
-        void translateKorean(sentence);
+                .trim() || recognizedText;
+        void translateSourceText(sentence);
       }, SPEECH_STABILITY_DELAY_MS);
     };
 
@@ -445,7 +515,9 @@ export function useSpeechTranslation({
         isRecordingRef.current = true;
         setIsRecording(true);
         setError(null);
-        setStatus("Listening for Korean speech...");
+        setStatus(
+          `Listening for ${directionRef.current === "ko-to-en" ? "Korean" : "English"} speech...`,
+        );
       }),
       ExpoSpeechRecognitionModule.addListener("end", () => {
         isStartingRef.current = false;
@@ -560,20 +632,20 @@ export function useSpeechTranslation({
     } else {
       shouldListenRef.current = true;
       setIsListeningEnabled(true);
-      latestKoreanTextRef.current = "";
+      latestSourceTextRef.current = "";
       pendingInterimTextRef.current = "";
       recentFinalTextsRef.current.clear();
       translationRequestRef.current += 1;
-      setKoreanText("");
-      setEnglishText("");
+      setSourceText("");
+      setTranslationText("");
       setError(null);
       void startListeningRef.current();
     }
   };
 
   return {
-    koreanText,
-    englishText,
+    sourceText,
+    translationText,
     isRecording,
     isListeningEnabled,
     status,

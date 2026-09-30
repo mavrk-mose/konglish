@@ -3,16 +3,20 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { TranscriptEntry } from "@/types/transcript";
 
 type LiveTranscriptProps = {
-  koreanText: string;
-  englishText: string;
+  sourceText: string;
+  translationText: string;
+  sourceLanguage: string;
+  targetLanguage: string;
   entries: TranscriptEntry[];
   onEditEntry: (entry: TranscriptEntry) => void;
   onDeleteEntry: (entry: TranscriptEntry) => void;
 };
 
 export function LiveTranscript({
-  koreanText,
-  englishText,
+  sourceText,
+  translationText,
+  sourceLanguage,
+  targetLanguage,
   entries,
   onEditEntry,
   onDeleteEntry,
@@ -20,16 +24,16 @@ export function LiveTranscript({
   return (
     <ScrollView style={styles.display} contentContainerStyle={styles.content}>
       <View style={styles.transcriptPanel}>
-        <Text style={styles.panelLabel}>Korean transcript</Text>
-        <Text style={styles.koreanText}>
-          {koreanText || "Speak to begin..."}
+        <Text style={styles.panelLabel}>{sourceLanguage} speech</Text>
+        <Text style={styles.sourceText}>
+          {sourceText || `Speak ${sourceLanguage.toLowerCase()} to begin...`}
         </Text>
       </View>
 
       <View style={[styles.transcriptPanel, styles.translationPanel]}>
-        <Text style={styles.panelLabel}>English translation</Text>
-        <Text style={styles.englishText}>
-          {englishText || "Your translation will appear here."}
+        <Text style={styles.panelLabel}>{targetLanguage} translation</Text>
+        <Text style={styles.translationText}>
+          {translationText || `${targetLanguage} translation will appear here.`}
         </Text>
       </View>
 
@@ -98,12 +102,12 @@ const styles = StyleSheet.create({
     marginBottom: 13,
     textTransform: "uppercase",
   },
-  koreanText: {
+  sourceText: {
     color: "#15241E",
     fontSize: 19,
     lineHeight: 28,
   },
-  englishText: {
+  translationText: {
     color: "#186B52",
     fontSize: 18,
     fontWeight: "600",
