@@ -27,6 +27,10 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.INTERNET"
       ],
       "package": "com.maverikmoses.konglish"
@@ -78,6 +82,12 @@
       "eas": {
         "projectId": "2a34fae3-2d0b-4a96-ae4f-648d5d052ed7"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/2a34fae3-2d0b-4a96-ae4f-648d5d052ed7"
     }
   }
 }

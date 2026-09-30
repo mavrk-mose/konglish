@@ -542,13 +542,14 @@ export default function HomeScreen() {
         {sessionTranscript.length > 0 ? (
           <View style={styles.historySection}>
             <Text style={styles.historyHeader}>Completed sentences</Text>
-            {sessionTranscript.map((entry, index) => (
+            {[...sessionTranscript].reverse().map((entry, index) => (
               <View
                 key={`${entry.timestamp}-${index}`}
                 style={styles.historyRow}
               >
                 <Text style={styles.historyMeta}>
-                  Sentence {index + 1} · {entry.timestamp}
+                  Sentence {sessionTranscript.length - index} ·{" "}
+                  {entry.timestamp}
                 </Text>
                 <Text style={styles.historyKo}>KR: {entry.ko}</Text>
                 <Text style={styles.historyEn}>EN: {entry.en}</Text>
