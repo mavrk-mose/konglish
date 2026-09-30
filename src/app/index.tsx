@@ -1,71 +1,42 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Linking,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { createMMKV } from "react-native-mmkv";
+import { Alert, Animated, Linking, Platform, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import TranslateText, {
   TranslateLanguage,
 } from "@react-native-ml-kit/translate-text";
-import { File, Paths } from "expo-file-system";
-import * as Sharing from "expo-sharing";
 import {
   ExpoSpeechRecognitionModule,
   type ExpoSpeechRecognitionResultEvent,
 } from "expo-speech-recognition";
 
+import { LiveControls } from "@/components/live-controls";
+import { LiveTranscript } from "@/components/live-transcript";
+import { OfflineSetup } from "@/components/offline-setup";
+import { SpeechStatusFooter } from "@/components/speech-status-footer";
+import { TranscriptEditorModal } from "@/components/transcript-editor-modal";
+import { useTranscript } from "@/hooks/use-transcript";
+
 const MODEL_READY_KEY = "konglish.translation-models-ready";
-const TRANSCRIPT_STORAGE_KEY = "konglish.completed-translations";
 const SPEECH_STABILITY_DELAY_MS = 400;
 const FINAL_DUPLICATE_WINDOW_MS = 2500;
-const transcriptStorage = createMMKV({ id: "konglish-transcripts" });
-
-type TranscriptEntry = {
-  id: string;
-  sequence: number;
-  ko: string;
-  en: string;
-  timestamp: string;
-};
-
-const loadSavedTranscript = (): TranscriptEntry[] => {
-  try {
-    const savedTranscript = transcriptStorage.getString(TRANSCRIPT_STORAGE_KEY);
-    if (!savedTranscript) return [];
-
-    const parsedTranscript: unknown = JSON.parse(savedTranscript);
-    if (!Array.isArray(parsedTranscript)) return [];
-
-    return parsedTranscript.filter(
-      (entry): entry is TranscriptEntry =>
-        typeof entry === "object" &&
-        entry !== null &&
-        typeof entry.id === "string" &&
-        typeof entry.sequence === "number" &&
-        typeof entry.ko === "string" &&
-        typeof entry.en === "string" &&
-        typeof entry.timestamp === "string",
-    );
-  } catch (error) {
-    console.warn("Could not load saved translations:", error);
-    return [];
-  }
-};
 
 export default function HomeScreen() {
+  const {
+    entries: sessionTranscript,
+    updateSavedTranscript,
+    editingEntryId,
+    setEditingEntryId,
+    editKoreanText,
+    setEditKoreanText,
+    editEnglishText,
+    setEditEnglishText,
+    startEditingEntry,
+    saveEditedEntry,
+    confirmDeleteEntry,
+    exportSessionLog,
+  } = useTranscript();
   const [isModelReady, setIsModelReady] = useState(false);
   const [downloadProgressMessage, setDownloadProgressMessage] = useState(
     "Checking on-device English and Korean language files...",
@@ -77,12 +48,6 @@ export default function HomeScreen() {
   const [isListeningEnabled, setIsListeningEnabled] = useState(true);
   const [speechStatus, setSpeechStatus] = useState("Starting microphone...");
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [sessionTranscript, setSessionTranscript] =
-    useState<TranscriptEntry[]>(loadSavedTranscript);
-  const sessionTranscriptRef = useRef(sessionTranscript);
-  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
-  const [editKoreanText, setEditKoreanText] = useState("");
-  const [editEnglishText, setEditEnglishText] = useState("");
   const modelReadyRef = useRef(false);
   const shouldListenRef = useRef(true);
   const isStartingRef = useRef(false);
@@ -113,56 +78,6 @@ export default function HomeScreen() {
   const retryProvisionRef = useRef<() => void>(() => {});
   const startListeningRef = useRef<() => Promise<void>>(async () => {});
   const [soundLevel] = useState(() => new Animated.Value(0));
-
-  const updateSavedTranscript = (
-    update: (entries: TranscriptEntry[]) => TranscriptEntry[],
-  ) => {
-    const updatedEntries = update(sessionTranscriptRef.current);
-    sessionTranscriptRef.current = updatedEntries;
-    transcriptStorage.set(
-      TRANSCRIPT_STORAGE_KEY,
-      JSON.stringify(updatedEntries),
-    );
-    setSessionTranscript(updatedEntries);
-  };
-
-  const startEditingEntry = (entry: TranscriptEntry) => {
-    setEditingEntryId(entry.id);
-    setEditKoreanText(entry.ko);
-    setEditEnglishText(entry.en);
-  };
-
-  const saveEditedEntry = () => {
-    const korean = editKoreanText.trim();
-    const english = editEnglishText.trim();
-    if (!korean || !english || !editingEntryId) {
-      Alert.alert("Text required", "Enter both the Korean and English text.");
-      return;
-    }
-
-    updateSavedTranscript((entries) =>
-      entries.map((entry) =>
-        entry.id === editingEntryId
-          ? { ...entry, ko: korean, en: english }
-          : entry,
-      ),
-    );
-    setEditingEntryId(null);
-  };
-
-  const confirmDeleteEntry = (entry: TranscriptEntry) => {
-    Alert.alert("Delete completed translation?", "This cannot be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () =>
-          updateSavedTranscript((entries) =>
-            entries.filter((savedEntry) => savedEntry.id !== entry.id),
-          ),
-      },
-    ]);
-  };
 
   useEffect(() => {
     let isMounted = true;
@@ -694,7 +609,7 @@ export default function HomeScreen() {
       ExpoSpeechRecognitionModule.abort();
       subscriptions.forEach((subscription) => subscription.remove());
     };
-  }, [soundLevel]);
+  }, [soundLevel, updateSavedTranscript]);
 
   const toggleListening = async () => {
     if (!modelReadyRef.current) return;
@@ -730,246 +645,48 @@ export default function HomeScreen() {
     }
   };
 
-  const exportSessionLog = async () => {
-    if (sessionTranscript.length === 0 && !koreanText) {
-      Alert.alert("Empty session", "There is no transcript to export yet.");
-      return;
-    }
-
-    const completedEntries = sessionTranscript
-      .map(
-        (entry, index) =>
-          `[Sentence ${index + 1} - ${entry.timestamp}]\nKR: ${entry.ko}\nEN: ${entry.en}`,
-      )
-      .join("\n\n");
-    const currentEntry = koreanText
-      ? `[Current stream${isRecording ? " - Live" : ""}]\nKR: ${koreanText}\nEN: ${englishText || "Translation pending"}`
-      : "";
-    const content = [
-      "--- TRANSLATION SESSION LOG ---",
-      completedEntries,
-      currentEntry,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    try {
-      const file = new File(Paths.document, `Transcript_${Date.now()}.txt`);
-      file.create({ overwrite: true });
-      file.write(content, { encoding: "utf8" });
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(file.uri, {
-          dialogTitle: "Export translation transcript",
-          mimeType: "text/plain",
-          UTI: "public.plain-text",
-        });
-      } else {
-        Alert.alert("Export complete", `Transcript saved at ${file.uri}`);
-      }
-    } catch (error) {
-      console.error("Transcript export failed:", error);
-      Alert.alert("Export failed", "The transcript file could not be created.");
-    }
-  };
-
   if (!isModelReady) {
     return (
-      <SafeAreaView style={styles.setupScreen}>
-        {modelError ? null : <ActivityIndicator size="large" color="#186B52" />}
-        <View style={styles.setupCopy}>
-          <Text style={styles.eyebrow}>KONGLISH / OFFLINE SETUP</Text>
-          <Text style={styles.setupTitle}>
-            {modelError
-              ? "Translation is not ready"
-              : "Preparing your translator"}
-          </Text>
-          <Text style={styles.setupMessage}>
-            {modelError ?? downloadProgressMessage}
-          </Text>
-          <Text style={styles.setupNote}>
-            The language files are saved on this device after the first
-            download.
-          </Text>
-        </View>
-        {modelError && Platform.OS !== "web" ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => retryProvisionRef.current()}
-            style={styles.retryButton}
-          >
-            <Text style={styles.retryText}>Retry download</Text>
-          </Pressable>
-        ) : null}
-      </SafeAreaView>
+      <OfflineSetup
+        error={modelError}
+        progressMessage={downloadProgressMessage}
+        onRetry={() => retryProvisionRef.current()}
+      />
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.eyebrow}>KONGLISH / LIVE</Text>
-          <Text style={styles.title}>Korean, in the moment.</Text>
-        </View>
-        <View style={styles.readyMark}>
-          <Text style={styles.readyMarkText}>KO / EN</Text>
-        </View>
-      </View>
-
-      <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !isModelReady }}
-          onPress={() => void toggleListening()}
-          style={[
-            styles.listenButton,
-            isRecording && styles.listenButtonActive,
-          ]}
-        >
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.soundPulse,
-              {
-                opacity: soundLevel.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 0.42],
-                }),
-                transform: [
-                  {
-                    scale: soundLevel.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [1, 2.8],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          />
-          <View style={styles.listenDot} />
-          <Text style={styles.listenButtonText}>
-            {isListeningEnabled ? "Stop listening" : "Start listening"}
-          </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => void exportSessionLog()}
-          style={styles.exportButton}
-        >
-          <Text style={styles.exportButtonText}>Export .txt</Text>
-        </Pressable>
-      </View>
-
-      <ScrollView
-        style={styles.streamDisplay}
-        contentContainerStyle={styles.streamContent}
-      >
-        <View style={styles.transcriptPanel}>
-          <Text style={styles.panelLabel}>Korean transcript</Text>
-          <Text style={styles.koreanText}>
-            {koreanText || "Speak to begin..."}
-          </Text>
-        </View>
-
-        <View style={[styles.transcriptPanel, styles.translationPanel]}>
-          <Text style={styles.panelLabel}>English translation</Text>
-          <Text style={styles.englishText}>
-            {englishText || "Your translation will appear here."}
-          </Text>
-        </View>
-
-        {sessionTranscript.length > 0 ? (
-          <View style={styles.historySection}>
-            <Text style={styles.historyHeader}>Completed sentences</Text>
-            {[...sessionTranscript].reverse().map((entry, index) => (
-              <View key={entry.id} style={styles.historyRow}>
-                <Text style={styles.historyMeta}>
-                  Sentence {sessionTranscript.length - index} ·{" "}
-                  {entry.timestamp}
-                </Text>
-                <Text style={styles.historyKo}>KR: {entry.ko}</Text>
-                <Text style={styles.historyEn}>EN: {entry.en}</Text>
-                <View style={styles.entryActions}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Edit completed translation"
-                    onPress={() => startEditingEntry(entry)}
-                    style={styles.entryActionButton}
-                  >
-                    <Text style={styles.entryActionText}>Edit</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Delete completed translation"
-                    onPress={() => confirmDeleteEntry(entry)}
-                    style={styles.entryActionButton}
-                  >
-                    <Text style={styles.deleteActionText}>Delete</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </View>
-        ) : null}
-      </ScrollView>
-
-      <Modal
-        animationType="fade"
-        transparent
+      <LiveControls
+        isRecording={isRecording}
+        isListeningEnabled={isListeningEnabled}
+        soundLevel={soundLevel}
+        onToggleListening={() => void toggleListening()}
+        onExport={() =>
+          void exportSessionLog(koreanText, englishText, isRecording)
+        }
+      />
+      <LiveTranscript
+        koreanText={koreanText}
+        englishText={englishText}
+        entries={sessionTranscript}
+        onEditEntry={startEditingEntry}
+        onDeleteEntry={confirmDeleteEntry}
+      />
+      <TranscriptEditorModal
         visible={editingEntryId !== null}
-        onRequestClose={() => setEditingEntryId(null)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.editSheet}>
-            <Text style={styles.editTitle}>Edit completed text</Text>
-            <Text style={styles.editLabel}>Korean</Text>
-            <TextInput
-              multiline
-              value={editKoreanText}
-              onChangeText={setEditKoreanText}
-              placeholder="Korean source text"
-              placeholderTextColor="#87938D"
-              style={styles.editInput}
-            />
-            <Text style={styles.editLabel}>English</Text>
-            <TextInput
-              multiline
-              value={editEnglishText}
-              onChangeText={setEditEnglishText}
-              placeholder="English translation"
-              placeholderTextColor="#87938D"
-              style={styles.editInput}
-            />
-            <View style={styles.editActions}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setEditingEntryId(null)}
-                style={styles.cancelEditButton}
-              >
-                <Text style={styles.cancelEditText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={saveEditedEntry}
-                style={styles.saveEditButton}
-              >
-                <Text style={styles.saveEditText}>Save changes</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <View style={styles.footer}>
-        <View style={[styles.onlineDot, !isRecording && styles.offlineDot]} />
-        <View style={styles.footerCopy}>
-          <Text style={styles.footerText}>{speechStatus}</Text>
-          {speechError ? (
-            <Text style={styles.speechError}>{speechError}</Text>
-          ) : null}
-        </View>
-      </View>
+        koreanText={editKoreanText}
+        englishText={editEnglishText}
+        onChangeKoreanText={setEditKoreanText}
+        onChangeEnglishText={setEditEnglishText}
+        onClose={() => setEditingEntryId(null)}
+        onSave={saveEditedEntry}
+      />
+      <SpeechStatusFooter
+        isRecording={isRecording}
+        status={speechStatus}
+        error={speechError}
+      />
     </SafeAreaView>
   );
 }
@@ -980,329 +697,5 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3F5F0",
     paddingHorizontal: 24,
     paddingTop: 28,
-  },
-  setupScreen: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 32,
-    backgroundColor: "#F3F5F0",
-  },
-  setupCopy: {
-    alignItems: "center",
-    marginTop: 26,
-  },
-  eyebrow: {
-    color: "#527468",
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1.4,
-  },
-  setupTitle: {
-    color: "#15241E",
-    fontSize: 26,
-    fontWeight: "700",
-    marginTop: 14,
-    textAlign: "center",
-  },
-  setupMessage: {
-    color: "#53645D",
-    fontSize: 15,
-    lineHeight: 22,
-    marginTop: 10,
-    textAlign: "center",
-  },
-  setupNote: {
-    color: "#87938D",
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 28,
-    textAlign: "center",
-  },
-  retryButton: {
-    alignItems: "center",
-    backgroundColor: "#186B52",
-    borderRadius: 7,
-    marginTop: 28,
-    paddingHorizontal: 22,
-    paddingVertical: 14,
-  },
-  retryText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 34,
-  },
-  title: {
-    color: "#15241E",
-    fontSize: 26,
-    fontWeight: "700",
-    marginTop: 8,
-  },
-  readyMark: {
-    alignItems: "center",
-    backgroundColor: "#E2EAE3",
-    borderRadius: 6,
-    justifyContent: "center",
-    minHeight: 36,
-    paddingHorizontal: 10,
-  },
-  readyMarkText: {
-    color: "#186B52",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  actions: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 20,
-  },
-  listenButton: {
-    position: "relative",
-    overflow: "hidden",
-    flex: 1,
-    alignItems: "center",
-    backgroundColor: "#186B52",
-    borderRadius: 8,
-    flexDirection: "row",
-    justifyContent: "center",
-    minHeight: 56,
-    gap: 10,
-  },
-  listenButtonActive: {
-    backgroundColor: "#A53A31",
-  },
-  listenDot: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 4,
-    height: 8,
-    width: 8,
-  },
-  soundPulse: {
-    position: "absolute",
-    width: 14,
-    height: 14,
-    left: "27%",
-    borderRadius: 7,
-    backgroundColor: "#A7E5C9",
-  },
-  listenButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  exportButton: {
-    alignItems: "center",
-    backgroundColor: "#334B42",
-    borderRadius: 8,
-    justifyContent: "center",
-    minHeight: 56,
-    paddingHorizontal: 16,
-  },
-  exportButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  streamDisplay: {
-    flex: 1,
-  },
-  streamContent: {
-    paddingBottom: 16,
-  },
-  transcriptPanel: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DDE5DE",
-    borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: "center",
-    marginBottom: 14,
-    minHeight: 142,
-    padding: 18,
-  },
-  translationPanel: {
-    backgroundColor: "#E9F0E9",
-    borderColor: "#CFDDD0",
-  },
-  panelLabel: {
-    color: "#718078",
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: 13,
-    textTransform: "uppercase",
-  },
-  koreanText: {
-    color: "#15241E",
-    fontSize: 19,
-    lineHeight: 28,
-  },
-  englishText: {
-    color: "#186B52",
-    fontSize: 18,
-    fontWeight: "600",
-    lineHeight: 27,
-  },
-  historySection: {
-    borderTopColor: "#DDE5DE",
-    borderTopWidth: 1,
-    marginTop: 8,
-    paddingTop: 18,
-  },
-  historyHeader: {
-    color: "#15241E",
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 12,
-  },
-  historyRow: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DDE5DE",
-    borderRadius: 7,
-    borderWidth: 1,
-    marginBottom: 10,
-    padding: 13,
-  },
-  historyMeta: {
-    color: "#718078",
-    fontSize: 11,
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  historyKo: {
-    color: "#15241E",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  historyEn: {
-    color: "#186B52",
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  entryActions: {
-    borderTopColor: "#E8ECE8",
-    borderTopWidth: 1,
-    flexDirection: "row",
-    gap: 18,
-    marginTop: 12,
-    paddingTop: 9,
-  },
-  entryActionButton: {
-    minHeight: 30,
-    justifyContent: "center",
-  },
-  entryActionText: {
-    color: "#186B52",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  deleteActionText: {
-    color: "#A53A31",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(15, 28, 22, 0.48)",
-    justifyContent: "center",
-    padding: 22,
-  },
-  editSheet: {
-    backgroundColor: "#F3F5F0",
-    borderRadius: 8,
-    padding: 20,
-  },
-  editTitle: {
-    color: "#15241E",
-    fontSize: 19,
-    fontWeight: "700",
-    marginBottom: 18,
-  },
-  editLabel: {
-    color: "#718078",
-    fontSize: 11,
-    fontWeight: "700",
-    marginBottom: 6,
-    textTransform: "uppercase",
-  },
-  editInput: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DDE5DE",
-    borderRadius: 6,
-    borderWidth: 1,
-    color: "#15241E",
-    fontSize: 15,
-    lineHeight: 21,
-    marginBottom: 14,
-    minHeight: 72,
-    padding: 11,
-    textAlignVertical: "top",
-  },
-  editActions: {
-    flexDirection: "row",
-    gap: 10,
-    justifyContent: "flex-end",
-    marginTop: 4,
-  },
-  cancelEditButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: 12,
-  },
-  cancelEditText: {
-    color: "#53645D",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  saveEditButton: {
-    alignItems: "center",
-    backgroundColor: "#186B52",
-    borderRadius: 6,
-    justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: 15,
-  },
-  saveEditText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  footer: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 8,
-    marginTop: "auto",
-    paddingBottom: 20,
-  },
-  footerCopy: {
-    flex: 1,
-  },
-  onlineDot: {
-    backgroundColor: "#35936B",
-    borderRadius: 4,
-    height: 7,
-    width: 7,
-  },
-  offlineDot: {
-    backgroundColor: "#A53A31",
-    marginTop: 5,
-  },
-  footerText: {
-    color: "#718078",
-    fontSize: 12,
-  },
-  speechError: {
-    color: "#A53A31",
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 4,
   },
 });
