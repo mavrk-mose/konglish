@@ -305,7 +305,6 @@ export function useSpeechTranslation({
     const updateSourceTranscript = (text: string) => {
       if (latestSourceTextRef.current === text) return;
       latestSourceTextRef.current = text;
-      translationRequestRef.current += 1;
       setSourceText((current) => (current === text ? current : text));
     };
 
