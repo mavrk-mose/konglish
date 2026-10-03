@@ -31,6 +31,7 @@ export function useSpeechTranslation({
 }: SpeechTranslationOptions) {
   const [sourceText, setSourceText] = useState("");
   const [translationText, setTranslationText] = useState("");
+  const [translationError, setTranslationError] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isListeningEnabled, setIsListeningEnabled] = useState(true);
   const [status, setStatus] = useState("Starting microphone...");
@@ -93,6 +94,7 @@ export function useSpeechTranslation({
     }
     setSourceText("");
     setTranslationText("");
+    setTranslationError(false);
 
     if (!enabledRef.current || !shouldListenRef.current) return;
     if (isRecordingRef.current) {
@@ -333,6 +335,7 @@ export function useSpeechTranslation({
       setTranslationText((current) =>
         current === translation ? current : translation,
       );
+      setTranslationError(false);
       if (__DEV__) {
         console.log(`[Translation] result: ${text} => ${translation}`);
       }
@@ -345,6 +348,7 @@ export function useSpeechTranslation({
 
       const currentDirection = directionRef.current;
       const requestId = ++translationRequestRef.current;
+      setTranslationError(false);
       const cachedTranslation = lastTranslationResultRef.current;
       if (cachedTranslation?.text === text) {
         if (__DEV__) {
@@ -375,6 +379,9 @@ export function useSpeechTranslation({
         } catch (translationError) {
           if (__DEV__) {
             console.warn("[Translation] failed:", translationError);
+          }
+          if (requestId === translationRequestRef.current) {
+            setTranslationError(true);
           }
           return null;
         }
@@ -411,8 +418,9 @@ export function useSpeechTranslation({
         ) {
           lastTranslatedTextRef.current = "";
         }
-        if (__DEV__) {
-          console.warn("[Translation] failed:", translationError);
+        console.warn("[Translation] failed:", translationError);
+        if (requestId === translationRequestRef.current) {
+          setTranslationError(true);
         }
         return null;
       } finally {
@@ -451,7 +459,10 @@ export function useSpeechTranslation({
       const isNewUtterance = pendingInterimTextRef.current.length === 0;
       recentFinalTextsRef.current.set(duplicateKey, now);
       updateSourceTranscript(normalizedText);
-      if (isNewUtterance) setTranslationText("");
+      if (isNewUtterance) {
+        setTranslationText("");
+        setTranslationError(false);
+      }
       pendingInterimTextRef.current = "";
       if (stabilityTimeoutRef.current) {
         clearTimeout(stabilityTimeoutRef.current);
@@ -511,7 +522,10 @@ export function useSpeechTranslation({
       const isNewUtterance = pendingInterimTextRef.current.length === 0;
       pendingInterimTextRef.current = recognizedText;
       updateSourceTranscript(recognizedText);
-      if (isNewUtterance) setTranslationText("");
+      if (isNewUtterance) {
+        setTranslationText("");
+        setTranslationError(false);
+      }
       if (stabilityTimeoutRef.current) {
         clearTimeout(stabilityTimeoutRef.current);
       }
@@ -701,6 +715,7 @@ export function useSpeechTranslation({
       translationRequestRef.current += 1;
       setSourceText("");
       setTranslationText("");
+      setTranslationError(false);
       setError(null);
       void startListeningRef.current();
     }
@@ -709,6 +724,7 @@ export function useSpeechTranslation({
   return {
     sourceText,
     translationText,
+    translationError,
     isRecording,
     isListeningEnabled,
     status,

@@ -1,12 +1,9 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 
 import TranslateText, {
     TranslateLanguage,
 } from "@react-native-ml-kit/translate-text";
-
-const MODEL_READY_KEY = "konglish.translation-models-ready";
 
 export function useTranslationModels() {
   const [isReady, setIsReady] = useState(false);
@@ -30,13 +27,6 @@ export function useTranslationModels() {
       }
 
       try {
-        const wasProvisioned = await AsyncStorage.getItem(MODEL_READY_KEY);
-        if (!isMounted) return;
-        if (wasProvisioned === "true") {
-          setIsReady(true);
-          return;
-        }
-
         setProgressMessage(
           "Preparing on-device English and Korean language files...",
         );
@@ -46,7 +36,6 @@ export function useTranslationModels() {
           targetLanguage: TranslateLanguage.ENGLISH,
           downloadModelIfNeeded: true,
         });
-        await AsyncStorage.setItem(MODEL_READY_KEY, "true");
 
         if (isMounted) setIsReady(true);
       } catch (provisionError) {

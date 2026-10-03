@@ -1,14 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useKeepAwake } from "expo-keep-awake";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ChevronDown,
-  Download,
-  History,
-  Mic,
-  Pencil,
-  Settings,
-} from "lucide-react-native";
+import { Download, History, Mic, Pencil, Settings } from "lucide-react-native";
 import {
   Alert,
   Animated,
@@ -190,8 +183,10 @@ export default function HomeScreen() {
   const translatedText = useMemo(
     () =>
       speech.translationText ||
-      `${targetLanguage} translation will appear here.`,
-    [speech.translationText, targetLanguage],
+      (speech.translationError
+        ? "Translation failed. Please try speaking again."
+        : `${targetLanguage} translation will appear here.`),
+    [speech.translationError, speech.translationText, targetLanguage],
   );
   const handleHistoryExport = async () => {
     await exportSessionLog("", "", false);
@@ -241,21 +236,7 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.liveArea}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setHistoryVisible(true)}
-          style={styles.historyHint}
-        >
-          <Text style={[styles.historyHintLabel, { color: theme.secondary }]}>
-            Swipe down to see history
-          </Text>
-          <ChevronDown color={theme.secondary} size={22} strokeWidth={2} />
-        </Pressable>
-
         <View style={styles.textBlock}>
-          <Text style={[styles.listeningLabel, { color: theme.primary }]}>
-            {speech.isRecording ? "Listening..." : "Ready to listen"}
-          </Text>
           <Text
             style={[
               styles.mainText,
@@ -276,7 +257,6 @@ export default function HomeScreen() {
             {translatedText}
           </Text>
         </View>
-
       </View>
 
       <View style={styles.bottomBar}>
@@ -318,7 +298,9 @@ export default function HomeScreen() {
           style={[
             styles.micButton,
             {
-              backgroundColor: speech.isRecording ? theme.panelAlt : theme.panelAlt,
+              backgroundColor: speech.isRecording
+                ? theme.panelAlt
+                : theme.panelAlt,
               shadowColor: theme.shadow,
               borderWidth: speech.isRecording ? 1 : 0,
               borderColor: speech.isRecording ? theme.accent : undefined,
@@ -340,7 +322,9 @@ export default function HomeScreen() {
                       : 1,
                   },
                 ],
-                backgroundColor: speech.isRecording ? theme.danger : theme.buttonBg,
+                backgroundColor: speech.isRecording
+                  ? theme.danger
+                  : theme.buttonBg,
                 shadowColor: speech.isRecording ? theme.danger : theme.shadow,
                 shadowOpacity: speech.isRecording ? 0.45 : 0.12,
                 shadowRadius: speech.isRecording ? 10 : 8,
@@ -432,7 +416,11 @@ export default function HomeScreen() {
                         onPress={() => startEditingEntry(entry)}
                         style={styles.historyAction}
                       >
-                        <Pencil color={theme.primary} size={16} strokeWidth={2} />
+                        <Pencil
+                          color={theme.primary}
+                          size={16}
+                          strokeWidth={2}
+                        />
                       </Pressable>
                       <Pressable
                         accessibilityRole="button"
@@ -440,7 +428,11 @@ export default function HomeScreen() {
                         onPress={() => void exportSessionLog("", "", false)}
                         style={styles.historyAction}
                       >
-                        <Download color={theme.primary} size={17} strokeWidth={2} />
+                        <Download
+                          color={theme.primary}
+                          size={17}
+                          strokeWidth={2}
+                        />
                       </Pressable>
                     </View>
                   </View>
@@ -649,24 +641,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingTop: 8,
   },
-  historyHint: {
-    alignItems: "center",
-    marginTop: 18,
-    marginBottom: 24,
-  },
-  historyHintLabel: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
   textBlock: {
     justifyContent: "center",
     gap: 18,
     marginBottom: 18,
-  },
-  listeningLabel: {
-    fontSize: 26,
-    fontWeight: "700",
-    marginBottom: 10,
   },
   mainText: {
     fontWeight: "500",
