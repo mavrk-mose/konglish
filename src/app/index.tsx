@@ -1,3 +1,4 @@
+import { useKeepAwake } from "expo-keep-awake";
 import { useCallback, useState } from "react";
 import { StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,6 +13,11 @@ import { useTranscript } from "@/hooks/use-transcript";
 import { useTranslationModels } from "@/hooks/use-translation-models";
 import type { TranscriptEntry } from "@/types/transcript";
 import type { TranslationDirection } from "@/types/translation";
+
+function KeepAwakeWhileListening() {
+  useKeepAwake();
+  return null;
+}
 
 export default function HomeScreen() {
   const [direction, setDirection] = useState<TranslationDirection>("ko-to-en");
@@ -68,6 +74,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {speech.isListeningEnabled && <KeepAwakeWhileListening />}
       <LiveControls
         direction={direction}
         isRecording={speech.isRecording}
