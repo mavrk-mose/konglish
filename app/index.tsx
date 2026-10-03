@@ -1,20 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useKeepAwake } from "expo-keep-awake";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, History, Mic, Pencil, Settings } from "lucide-react-native";
-import {
-  Alert,
-  Animated,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  useColorScheme,
-} from "react-native";
+import { Alert, Animated, StyleSheet, useColorScheme } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ControlBar } from "@/components/home/control-bar";
+import { HistorySheet } from "@/components/home/history-sheet";
+import { LiveTranslationDisplay } from "@/components/home/live-translation-display";
+import { SettingsSheet } from "@/components/home/settings-sheet";
 import { AppTheme } from "@/constants/theme";
 import { OfflineSetup } from "@/components/offline-setup";
 import { TranscriptEditorModal } from "@/components/transcript-editor-modal";
@@ -188,6 +181,7 @@ export default function HomeScreen() {
         : `${targetLanguage} translation will appear here.`),
     [speech.translationError, speech.translationText, targetLanguage],
   );
+
   const handleHistoryExport = async () => {
     await exportSessionLog("", "", false);
   };
@@ -223,347 +217,52 @@ export default function HomeScreen() {
     >
       {speech.isListeningEnabled && <KeepAwakeWhileListening />}
 
-      <View style={styles.topRow}>
-        <View style={styles.spacer} />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open history"
-          onPress={() => setHistoryVisible(true)}
-          style={[styles.iconButton, { backgroundColor: theme.panelAlt }]}
-        >
-          <History color={theme.primary} size={21} strokeWidth={2} />
-        </Pressable>
-      </View>
+      <LiveTranslationDisplay
+        theme={theme}
+        fontSize={FONT_SIZES[fontSizeMode]}
+        transcriptText={transcriptText}
+        translatedText={translatedText}
+        onOpenHistory={() => setHistoryVisible(true)}
+      />
 
-      <View style={styles.liveArea}>
-        <View style={styles.textBlock}>
-          <Text
-            style={[
-              styles.mainText,
-              { color: theme.primary, fontSize: FONT_SIZES[fontSizeMode] },
-            ]}
-          >
-            {transcriptText}
-          </Text>
-          <Text
-            style={[
-              styles.translationText,
-              {
-                color: theme.secondary,
-                fontSize: FONT_SIZES[fontSizeMode] * 0.9,
-              },
-            ]}
-          >
-            {translatedText}
-          </Text>
-        </View>
-      </View>
+      <ControlBar
+        theme={theme}
+        currentLanguageLabel={currentLanguageLabel}
+        isRecording={speech.isRecording}
+        languageAnimatedOpacity={languageAnimatedOpacity}
+        soundLevel={speech.soundLevel}
+        onOpenSettings={() => setSettingsVisible(true)}
+        onToggleDirection={() =>
+          setDirection((current) =>
+            current === "ko-to-en" ? "en-to-ko" : "ko-to-en",
+          )
+        }
+        onToggleListening={() => void speech.toggleListening()}
+      />
 
-      <View style={styles.bottomBar}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open settings"
-          onPress={() => setSettingsVisible(true)}
-          style={[styles.controlButton, { backgroundColor: theme.panelAlt }]}
-        >
-          <Settings color={theme.primary} size={23} strokeWidth={2} />
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Switch language"
-          onPress={() =>
-            setDirection((current) =>
-              current === "ko-to-en" ? "en-to-ko" : "ko-to-en",
-            )
-          }
-          style={[styles.languageButton, { backgroundColor: theme.panelAlt }]}
-        >
-          <Animated.Text
-            style={[
-              styles.languageText,
-              { color: theme.primary, opacity: languageAnimatedOpacity },
-            ]}
-          >
-            {currentLanguageLabel}
-          </Animated.Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            speech.isRecording ? "Stop recording" : "Start recording"
-          }
-          onPress={() => void speech.toggleListening()}
-          style={[
-            styles.micButton,
-            {
-              backgroundColor: speech.isRecording
-                ? theme.panelAlt
-                : theme.panelAlt,
-              shadowColor: theme.shadow,
-              borderWidth: speech.isRecording ? 1 : 0,
-              borderColor: speech.isRecording ? theme.accent : undefined,
-            },
-          ]}
-        >
-          <Animated.View
-            style={[
-              styles.micInner,
-              {
-                transform: [
-                  {
-                    scale: speech.isRecording
-                      ? speech.soundLevel.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [1, 1.2],
-                          extrapolate: "clamp",
-                        })
-                      : 1,
-                  },
-                ],
-                backgroundColor: speech.isRecording
-                  ? theme.danger
-                  : theme.buttonBg,
-                shadowColor: speech.isRecording ? theme.danger : theme.shadow,
-                shadowOpacity: speech.isRecording ? 0.45 : 0.12,
-                shadowRadius: speech.isRecording ? 10 : 8,
-                shadowOffset: { width: 0, height: 4 },
-              },
-            ]}
-          >
-            <Mic
-              color={speech.isRecording ? "#fff" : theme.buttonText}
-              size={24}
-              strokeWidth={2}
-            />
-          </Animated.View>
-        </Pressable>
-      </View>
-
-      <Modal
-        transparent
+      <HistorySheet
         visible={historyVisible}
-        animationType="none"
-        onRequestClose={() => setHistoryVisible(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setHistoryVisible(false)}
-        />
-        <Animated.View
-          style={[
-            styles.modalSheet,
-            {
-              backgroundColor: theme.panel,
-              transform: [{ translateY: historySlide }],
-            },
-          ]}
-        >
-          <View style={styles.sheetHeader}>
-            <Text style={[styles.sheetTitle, { color: theme.primary }]}>
-              History
-            </Text>
-            <Pressable
-              onPress={handleHistoryExport}
-              style={[
-                styles.exportInline,
-                { backgroundColor: theme.accentSoft },
-              ]}
-            >
-              <Download color={theme.primary} size={16} strokeWidth={2} />
-              <Text style={[styles.exportInlineText, { color: theme.primary }]}>
-                Export
-              </Text>
-            </Pressable>
-          </View>
+        entries={entries}
+        theme={theme}
+        historySlide={historySlide}
+        onDismiss={() => setHistoryVisible(false)}
+        onExport={handleHistoryExport}
+        onEditEntry={(entry) => startEditingEntry(entry)}
+      />
 
-          {entries.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={[styles.emptyTitle, { color: theme.primary }]}>
-                No completed translations yet
-              </Text>
-              <Text style={[styles.emptyBody, { color: theme.secondary }]}>
-                Finished sentences appear here after you stop recording.
-              </Text>
-            </View>
-          ) : (
-            <ScrollView
-              style={styles.historyList}
-              contentContainerStyle={styles.historyContent}
-            >
-              {[...entries].reverse().map((entry) => (
-                <View
-                  key={entry.id}
-                  style={[
-                    styles.historyItem,
-                    {
-                      borderColor: theme.border,
-                      backgroundColor: theme.panelAlt,
-                    },
-                  ]}
-                >
-                  <View style={styles.historyMetaRow}>
-                    <Text
-                      style={[styles.historyTimestamp, { color: theme.muted }]}
-                    >
-                      {entry.timestamp}
-                    </Text>
-                    <View style={styles.historyActionsInline}>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Edit completed translation"
-                        onPress={() => startEditingEntry(entry)}
-                        style={styles.historyAction}
-                      >
-                        <Pencil
-                          color={theme.primary}
-                          size={16}
-                          strokeWidth={2}
-                        />
-                      </Pressable>
-                    </View>
-                  </View>
-                  <Text
-                    style={[
-                      styles.historyTextLabel,
-                      { color: theme.secondary },
-                    ]}
-                  >
-                    Original
-                  </Text>
-                  <Text style={[styles.historyText, { color: theme.primary }]}>
-                    {entry.ko}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.historyTextLabel,
-                      { color: theme.secondary },
-                    ]}
-                  >
-                    Translation
-                  </Text>
-                  <Text style={[styles.historyText, { color: theme.accent }]}>
-                    {entry.en}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-          )}
-        </Animated.View>
-      </Modal>
-
-      <Modal
-        transparent
+      <SettingsSheet
         visible={settingsVisible}
-        animationType="none"
-        onRequestClose={() => setSettingsVisible(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setSettingsVisible(false)}
-        />
-        <Animated.View
-          style={[
-            styles.modalSheet,
-            {
-              backgroundColor: theme.panel,
-              transform: [{ translateY: settingsSlide }],
-            },
-          ]}
-        >
-          <Text style={[styles.sheetTitle, { color: theme.primary }]}>
-            Settings
-          </Text>
-
-          <View style={styles.settingSection}>
-            <Text style={[styles.settingLabel, { color: theme.secondary }]}>
-              Appearance
-            </Text>
-            <View
-              style={[styles.settingRow, { backgroundColor: theme.panelAlt }]}
-            >
-              <Text style={[styles.settingText, { color: theme.primary }]}>
-                {themeMode === "dark" ? "Dark mode" : "Light mode"}
-              </Text>
-              <Pressable
-                onPress={() =>
-                  setThemeMode((current) =>
-                    current === "dark" ? "light" : "dark",
-                  )
-                }
-                style={[
-                  styles.switch,
-                  {
-                    backgroundColor:
-                      themeMode === "dark" ? theme.accent : theme.border,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.switchThumb,
-                    {
-                      transform: [
-                        { translateX: themeMode === "dark" ? 20 : 0 },
-                      ],
-                    },
-                  ]}
-                />
-              </Pressable>
-            </View>
-          </View>
-
-          <View style={styles.settingSection}>
-            <Text style={[styles.settingLabel, { color: theme.secondary }]}>
-              Font size
-            </Text>
-            <View
-              style={[
-                styles.segmentedControl,
-                { backgroundColor: theme.panelAlt },
-              ]}
-            >
-              {(["small", "medium", "large"] as FontSizeMode[]).map((size) => (
-                <Pressable
-                  key={size}
-                  onPress={() => setFontSizeMode(size)}
-                  style={[
-                    styles.segmentItem,
-                    {
-                      backgroundColor:
-                        fontSizeMode === size ? theme.buttonBg : "transparent",
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.segmentText,
-                      {
-                        color:
-                          fontSizeMode === size
-                            ? theme.buttonText
-                            : theme.primary,
-                      },
-                    ]}
-                  >
-                    {size.charAt(0).toUpperCase() + size.slice(1)}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          <Pressable
-            onPress={handleDeleteAllHistory}
-            style={[styles.dangerButton, { backgroundColor: theme.panelAlt }]}
-          >
-            <Text style={[styles.dangerText, { color: theme.danger }]}>
-              Delete all history
-            </Text>
-          </Pressable>
-        </Animated.View>
-      </Modal>
+        theme={theme}
+        themeMode={themeMode}
+        fontSizeMode={fontSizeMode}
+        settingsSlide={settingsSlide}
+        onDismiss={() => setSettingsVisible(false)}
+        onToggleTheme={() =>
+          setThemeMode((current) => (current === "dark" ? "light" : "dark"))
+        }
+        onSetFontSize={(size) => setFontSizeMode(size)}
+        onDeleteAllHistory={handleDeleteAllHistory}
+      />
 
       <TranscriptEditorModal
         visible={editingEntryId !== null}
@@ -583,268 +282,5 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-  },
-  statusBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: 10,
-    paddingBottom: 8,
-  },
-  statusTime: {
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: -0.2,
-  },
-  statusRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  statusChip: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    marginTop: 4,
-  },
-  spacer: {
-    flex: 1,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  liveArea: {
-    flex: 1,
-    justifyContent: "center",
-    paddingTop: 8,
-  },
-  textBlock: {
-    justifyContent: "center",
-    gap: 18,
-    marginBottom: 18,
-  },
-  mainText: {
-    fontWeight: "500",
-    lineHeight: 32,
-  },
-  translationText: {
-    fontWeight: "500",
-    lineHeight: 28,
-  },
-  bottomBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingBottom: 18,
-    paddingTop: 16,
-  },
-  controlButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  languageButton: {
-    height: 52,
-    minWidth: 122,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 18,
-  },
-  languageText: {
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  micButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  micInner: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  modalSheet: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 22,
-    paddingTop: 18,
-    paddingBottom: 28,
-    maxHeight: "75%",
-  },
-  sheetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  sheetTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  exportInline: {
-    alignItems: "center",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  exportInlineText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  emptyState: {
-    minHeight: 180,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 24,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  emptyBody: {
-    textAlign: "center",
-    fontSize: 15,
-    lineHeight: 22,
-    maxWidth: 280,
-  },
-  historyList: {
-    maxHeight: 400,
-  },
-  historyContent: {
-    paddingBottom: 18,
-  },
-  historyItem: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-  },
-  historyMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  historyTimestamp: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  historyActionsInline: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  historyAction: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  historyTextLabel: {
-    marginTop: 12,
-    marginBottom: 4,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  historyText: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  settingSection: {
-    marginTop: 16,
-  },
-  settingLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    marginBottom: 8,
-    letterSpacing: 1,
-  },
-  settingRow: {
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  settingText: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  switch: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    paddingHorizontal: 4,
-    justifyContent: "center",
-  },
-  switchThumb: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#ffffff",
-  },
-  segmentedControl: {
-    flexDirection: "row",
-    padding: 4,
-    borderRadius: 14,
-    gap: 4,
-  },
-  segmentItem: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  segmentText: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  dangerButton: {
-    marginTop: 22,
-    borderRadius: 16,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  dangerText: {
-    fontSize: 16,
-    fontWeight: "700",
   },
 });
