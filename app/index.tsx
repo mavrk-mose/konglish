@@ -422,18 +422,6 @@ export default function HomeScreen() {
                           strokeWidth={2}
                         />
                       </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Export transcript"
-                        onPress={() => void exportSessionLog("", "", false)}
-                        style={styles.historyAction}
-                      >
-                        <Download
-                          color={theme.primary}
-                          size={17}
-                          strokeWidth={2}
-                        />
-                      </Pressable>
                     </View>
                   </View>
                   <Text
