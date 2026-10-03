@@ -30,6 +30,7 @@ export default function HomeScreen() {
     setEditKoreanText,
     editEnglishText,
     setEditEnglishText,
+    isSavingEdit,
     startEditingEntry,
     saveEditedEntry,
     confirmDeleteEntry,
@@ -107,10 +108,11 @@ export default function HomeScreen() {
         visible={editingEntryId !== null}
         koreanText={editKoreanText}
         englishText={editEnglishText}
+        isSaving={isSavingEdit}
         onChangeKoreanText={setEditKoreanText}
         onChangeEnglishText={setEditEnglishText}
         onClose={() => setEditingEntryId(null)}
-        onSave={saveEditedEntry}
+        onSave={() => void saveEditedEntry(direction)}
       />
       <SpeechStatusFooter
         isRecording={speech.isRecording}

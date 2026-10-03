@@ -11,6 +11,7 @@ type TranscriptEditorModalProps = {
   visible: boolean;
   koreanText: string;
   englishText: string;
+  isSaving: boolean;
   onChangeKoreanText: (text: string) => void;
   onChangeEnglishText: (text: string) => void;
   onClose: () => void;
@@ -21,6 +22,7 @@ export function TranscriptEditorModal({
   visible,
   koreanText,
   englishText,
+  isSaving,
   onChangeKoreanText,
   onChangeEnglishText,
   onClose,
@@ -38,6 +40,7 @@ export function TranscriptEditorModal({
           <Text style={styles.title}>Edit completed text</Text>
           <Text style={styles.label}>Korean</Text>
           <TextInput
+            editable={!isSaving}
             multiline
             value={koreanText}
             onChangeText={onChangeKoreanText}
@@ -47,6 +50,7 @@ export function TranscriptEditorModal({
           />
           <Text style={styles.label}>English</Text>
           <TextInput
+            editable={!isSaving}
             multiline
             value={englishText}
             onChangeText={onChangeEnglishText}
@@ -57,6 +61,7 @@ export function TranscriptEditorModal({
           <View style={styles.actions}>
             <Pressable
               accessibilityRole="button"
+              disabled={isSaving}
               onPress={onClose}
               style={styles.cancelButton}
             >
@@ -64,10 +69,13 @@ export function TranscriptEditorModal({
             </Pressable>
             <Pressable
               accessibilityRole="button"
+              disabled={isSaving}
               onPress={onSave}
               style={styles.saveButton}
             >
-              <Text style={styles.saveText}>Save changes</Text>
+              <Text style={styles.saveText}>
+                {isSaving ? "Translating..." : "Save changes"}
+              </Text>
             </Pressable>
           </View>
         </View>

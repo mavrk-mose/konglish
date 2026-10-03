@@ -6,6 +6,11 @@ import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
 import type { TranscriptEntry } from "@/types/transcript";
+import type { TranslationDirection } from "@/types/translation";
+
+import TranslateText, {
+  TranslateLanguage,
+} from "@react-native-ml-kit/translate-text";
 
 const TRANSCRIPT_STORAGE_KEY = "konglish.completed-translations";
 const transcriptStorage = createMMKV({ id: "konglish-transcripts" });
@@ -41,6 +46,7 @@ export function useTranscript() {
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
   const [editKoreanText, setEditKoreanText] = useState("");
   const [editEnglishText, setEditEnglishText] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const updateSavedTranscript = useCallback(
     (update: (currentEntries: TranscriptEntry[]) => TranscriptEntry[]) => {
@@ -61,7 +67,7 @@ export function useTranscript() {
     setEditEnglishText(entry.en);
   };
 
-  const saveEditedEntry = () => {
+  const saveEditedEntry = async (direction: TranslationDirection) => {
     const korean = editKoreanText.trim();
     const english = editEnglishText.trim();
     if (!korean || !english || !editingEntryId) {
@@ -69,14 +75,67 @@ export function useTranscript() {
       return;
     }
 
-    updateSavedTranscript((currentEntries) =>
-      currentEntries.map((entry) =>
-        entry.id === editingEntryId
-          ? { ...entry, ko: korean, en: english }
-          : entry,
-      ),
+    const entryToEdit = entriesRef.current.find(
+      (entry) => entry.id === editingEntryId,
     );
-    setEditingEntryId(null);
+    if (!entryToEdit) {
+      Alert.alert(
+        "Edit unavailable",
+        "This completed sentence could not be found.",
+      );
+      setEditingEntryId(null);
+      return;
+    }
+
+    const koreanChanged = korean !== entryToEdit.ko;
+    const englishChanged = english !== entryToEdit.en;
+    if (!koreanChanged && !englishChanged) {
+      setEditingEntryId(null);
+      return;
+    }
+
+    const translationDirection: TranslationDirection =
+      koreanChanged && !englishChanged
+        ? "ko-to-en"
+        : englishChanged && !koreanChanged
+          ? "en-to-ko"
+          : direction;
+    const sourceText = translationDirection === "ko-to-en" ? korean : english;
+
+    setIsSavingEdit(true);
+    try {
+      const translatedText = (await TranslateText.translate({
+        text: sourceText.replace(/\s+/gu, " "),
+        sourceLanguage:
+          translationDirection === "ko-to-en"
+            ? TranslateLanguage.KOREAN
+            : TranslateLanguage.ENGLISH,
+        targetLanguage:
+          translationDirection === "ko-to-en"
+            ? TranslateLanguage.ENGLISH
+            : TranslateLanguage.KOREAN,
+        downloadModelIfNeeded: false,
+      })) as string;
+
+      updateSavedTranscript((currentEntries) =>
+        currentEntries.map((entry) =>
+          entry.id === editingEntryId
+            ? translationDirection === "ko-to-en"
+              ? { ...entry, ko: korean, en: translatedText }
+              : { ...entry, ko: translatedText, en: english }
+            : entry,
+        ),
+      );
+      setEditingEntryId(null);
+    } catch (error) {
+      console.error("Edited sentence translation failed:", error);
+      Alert.alert(
+        "Translation failed",
+        "The edited sentence could not be translated. Please try again.",
+      );
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const confirmDeleteEntry = (entry: TranscriptEntry) => {
@@ -149,6 +208,7 @@ export function useTranscript() {
     setEditKoreanText,
     editEnglishText,
     setEditEnglishText,
+    isSavingEdit,
     startEditingEntry,
     saveEditedEntry,
     confirmDeleteEntry,
