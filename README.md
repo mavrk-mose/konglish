@@ -32,24 +32,96 @@ Konglish is built around a simple workflow:
 
 ```mermaid
 flowchart TD
-    A[Home screen] --> B[LiveControls]
-    A --> C[useSpeechTranslation]
-    A --> D[useTranslationModels]
-    A --> E[useTranscript]
 
-    C --> F[expo-speech-recognition]
-    C --> G[TranslateText ML]
-    D --> H[AsyncStorage]
-    D --> G
-    E --> I[MMKV storage]
-    E --> J[FileSystem + Sharing]
+subgraph group_app["App experience"]
+  node_shell["Router shell<br/>[_layout.tsx]"]
+  node_home["Home screen<br/>[index.tsx]"]
+  node_controls["Live controls<br/>[live-controls.tsx]"]
+  node_liveview["Live transcript"]
+  node_status["Speech status"]
+  node_setupui["Offline setup UI<br/>[offline-setup.tsx]"]
+  node_editor["Transcript editor"]
+end
 
-    F --> K[Interim/final speech text]
-    G --> L[Translated output]
-    K --> A
-    L --> A
-    A --> M[LiveTranscript + TranscriptEditorModal]
-    A --> N[Export session log]
+subgraph group_speech["Speech and translation"]
+  node_speechhook["Speech workflow"]
+  node_recognition["Speech recognition"]
+  node_models["Model provisioning"]
+  node_ml["On-device translation"]
+end
+
+subgraph group_history["Transcript history"]
+  node_transcripthook["Transcript actions<br/>[use-transcript.ts]"]
+  node_historylist["History review<br/>[index.tsx]"]
+  node_storage[("Transcript store<br/>[use-transcript.ts]")]
+  node_export["Text export and sharing<br/>[use-transcript.ts]"]
+end
+
+subgraph group_foundation["Shared foundations"]
+  node_entrytype["Transcript entries<br/>[transcript.ts]"]
+  node_directiontype["Translation direction<br/>[translation.ts]"]
+  node_theme["Theme tokens<br/>[theme.ts]"]
+end
+
+node_user(("User"))
+
+node_user -->|"opens"| node_home
+node_shell -->|"routes to"| node_home
+node_home -->|"configures"| node_speechhook
+node_home -->|"checks readiness"| node_models
+node_home -->|"loads history"| node_transcripthook
+node_home -->|"renders"| node_controls
+node_home -->|"renders"| node_liveview
+node_home -->|"renders"| node_status
+node_home -->|"shows gate"| node_setupui
+node_home -->|"opens"| node_editor
+node_controls -->|"changes direction"| node_home
+node_controls -->|"toggles listening"| node_speechhook
+node_speechhook -->|"starts capture"| node_recognition
+node_recognition -->|"emits results"| node_speechhook
+node_speechhook -->|"translates text"| node_ml
+node_models -->|"provisions packs"| node_ml
+node_home -->|"provides live state"| node_liveview
+node_speechhook -->|"completes entries"| node_transcripthook
+node_transcripthook -->|"reads and writes"| node_storage
+node_transcripthook -->|"retranslates edits"| node_ml
+node_home -->|"renders history"| node_historylist
+node_historylist -->|"edits or deletes"| node_transcripthook
+node_transcripthook -->|"creates export"| node_export
+node_user -->|"selects direction"| node_controls
+node_user -->|"edits entries"| node_editor
+node_home -->|"uses colors"| node_theme
+node_transcripthook -->|"stores typed entries"| node_entrytype
+node_home -->|"sets direction"| node_directiontype
+
+click node_shell "https://github.com/mavrk-mose/konglish/blob/master/app/_layout.tsx"
+click node_home "https://github.com/mavrk-mose/konglish/blob/master/app/index.tsx"
+click node_controls "https://github.com/mavrk-mose/konglish/blob/master/components/live-controls.tsx"
+click node_liveview "https://github.com/mavrk-mose/konglish/blob/master/components/live-transcript.tsx"
+click node_status "https://github.com/mavrk-mose/konglish/blob/master/components/speech-status-footer.tsx"
+click node_setupui "https://github.com/mavrk-mose/konglish/blob/master/components/offline-setup.tsx"
+click node_editor "https://github.com/mavrk-mose/konglish/blob/master/components/transcript-editor-modal.tsx"
+click node_speechhook "https://github.com/mavrk-mose/konglish/blob/master/hooks/use-speech-translation.ts"
+click node_models "https://github.com/mavrk-mose/konglish/blob/master/hooks/use-translation-models.ts"
+click node_transcripthook "https://github.com/mavrk-mose/konglish/blob/master/hooks/use-transcript.ts"
+click node_historylist "https://github.com/mavrk-mose/konglish/blob/master/app/index.tsx"
+click node_storage "https://github.com/mavrk-mose/konglish/blob/master/hooks/use-transcript.ts"
+click node_export "https://github.com/mavrk-mose/konglish/blob/master/hooks/use-transcript.ts"
+click node_entrytype "https://github.com/mavrk-mose/konglish/blob/master/types/transcript.ts"
+click node_directiontype "https://github.com/mavrk-mose/konglish/blob/master/types/translation.ts"
+click node_theme "https://github.com/mavrk-mose/konglish/blob/master/constants/theme.ts"
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_shell,node_home,node_controls,node_liveview,node_status,node_setupui,node_editor,node_user toneBlue
+class node_speechhook,node_recognition,node_models,node_ml toneAmber
+class node_transcripthook,node_historylist,node_storage,node_export toneMint
+class node_entrytype,node_directiontype,node_theme toneRose
 ```
 
 ### Functional layers

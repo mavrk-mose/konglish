@@ -14,6 +14,8 @@ import type { TranslationDirection } from "@/types/translation";
 
 const SPEECH_STABILITY_DELAY_MS = 400;
 const FINAL_DUPLICATE_WINDOW_MS = 2500;
+const UTTERANCE_SILENCE_MS = 1200;
+const FINAL_BOUNDARY_PATTERN = /[.!?](?:\s|$)/u;
 
 type SpeechTranslationOptions = {
   enabled: boolean;
@@ -46,6 +48,9 @@ export function useSpeechTranslation({
   const latestSourceTextRef = useRef("");
   const pendingInterimTextRef = useRef("");
   const stabilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const utteranceSilenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
   const lastTranslatedTextRef = useRef("");
@@ -82,6 +87,10 @@ export function useSpeechTranslation({
     if (stabilityTimeoutRef.current) {
       clearTimeout(stabilityTimeoutRef.current);
       stabilityTimeoutRef.current = null;
+    }
+    if (utteranceSilenceTimeoutRef.current) {
+      clearTimeout(utteranceSilenceTimeoutRef.current);
+      utteranceSilenceTimeoutRef.current = null;
     }
     setSourceText("");
     setTranslationText("");
@@ -413,6 +422,72 @@ export function useSpeechTranslation({
       }
     };
 
+    const finalizeRecognizedText = async (
+      text: string,
+      reason: "final" | "pause" | "punctuation",
+    ) => {
+      const normalizedText = text.trim().replace(/\s+/gu, " ");
+      if (!normalizedText || !enabledRef.current) return;
+
+      const resultDirection = directionRef.current;
+      if (resultDirection !== activeRecognitionDirectionRef.current) return;
+      const directionGeneration = directionGenerationRef.current;
+
+      const now = Date.now();
+      for (const [candidate, timestamp] of recentFinalTextsRef.current) {
+        if (now - timestamp > FINAL_DUPLICATE_WINDOW_MS) {
+          recentFinalTextsRef.current.delete(candidate);
+        }
+      }
+
+      const duplicateKey = normalizedText.toLowerCase();
+      if (recentFinalTextsRef.current.has(duplicateKey)) {
+        if (__DEV__) {
+          console.log(`[Translation] skipped duplicate: ${normalizedText}`);
+        }
+        return;
+      }
+
+      recentFinalTextsRef.current.set(duplicateKey, now);
+      latestSourceTextRef.current = "";
+      pendingInterimTextRef.current = "";
+      if (stabilityTimeoutRef.current) {
+        clearTimeout(stabilityTimeoutRef.current);
+        stabilityTimeoutRef.current = null;
+      }
+      if (utteranceSilenceTimeoutRef.current) {
+        clearTimeout(utteranceSilenceTimeoutRef.current);
+        utteranceSilenceTimeoutRef.current = null;
+      }
+      setSourceText("");
+      setTranslationText("");
+
+      if (__DEV__) {
+        console.log(`[Speech] finalize (${reason}): ${normalizedText}`);
+      }
+
+      const sequence = ++transcriptSequenceRef.current;
+      const timestamp = new Date(now).toLocaleTimeString("en-GB", {
+        hour12: false,
+      });
+      const translation = await translateSourceText(normalizedText);
+      if (
+        !isMounted ||
+        translation === null ||
+        directionGeneration !== directionGenerationRef.current
+      ) {
+        return;
+      }
+
+      onTranscriptComplete({
+        id: `${now}-${sequence}`,
+        sequence,
+        ko: resultDirection === "ko-to-en" ? normalizedText : translation,
+        en: resultDirection === "ko-to-en" ? translation : normalizedText,
+        timestamp,
+      });
+    };
+
     const handleSpeechResults = async (
       event: ExpoSpeechRecognitionResultEvent,
     ) => {
@@ -423,52 +498,9 @@ export function useSpeechTranslation({
 
       const resultDirection = directionRef.current;
       if (resultDirection !== activeRecognitionDirectionRef.current) return;
-      const directionGeneration = directionGenerationRef.current;
-
-      updateSourceTranscript(recognizedText);
 
       if (event.isFinal) {
-        if (stabilityTimeoutRef.current) {
-          clearTimeout(stabilityTimeoutRef.current);
-          stabilityTimeoutRef.current = null;
-        }
-        pendingInterimTextRef.current = "";
-        if (__DEV__) {
-          console.log(`[Speech] final: ${recognizedText}`);
-        }
-
-        const now = Date.now();
-        for (const [text, timestamp] of recentFinalTextsRef.current) {
-          if (now - timestamp > FINAL_DUPLICATE_WINDOW_MS) {
-            recentFinalTextsRef.current.delete(text);
-          }
-        }
-        if (recentFinalTextsRef.current.has(recognizedText)) {
-          if (__DEV__) {
-            console.log(`[Translation] skipped duplicate: ${recognizedText}`);
-          }
-          return;
-        }
-        recentFinalTextsRef.current.set(recognizedText, now);
-
-        const sequence = ++transcriptSequenceRef.current;
-        const timestamp = new Date(now).toLocaleTimeString();
-        const translation = await translateSourceText(recognizedText);
-        if (
-          !isMounted ||
-          translation === null ||
-          directionGeneration !== directionGenerationRef.current
-        ) {
-          return;
-        }
-
-        onTranscriptComplete({
-          id: `${now}-${sequence}`,
-          sequence,
-          ko: resultDirection === "ko-to-en" ? recognizedText : translation,
-          en: resultDirection === "ko-to-en" ? translation : recognizedText,
-          timestamp,
-        });
+        await finalizeRecognizedText(recognizedText, "final");
         return;
       }
 
@@ -478,6 +510,7 @@ export function useSpeechTranslation({
       if (pendingInterimTextRef.current === recognizedText) return;
 
       pendingInterimTextRef.current = recognizedText;
+      updateSourceTranscript(recognizedText);
       if (stabilityTimeoutRef.current) {
         clearTimeout(stabilityTimeoutRef.current);
       }
@@ -491,20 +524,38 @@ export function useSpeechTranslation({
           return;
         }
 
-        const boundaries = [
-          ...recognizedText.matchAll(
-            /(?:습니다|어요|네요|죠|다|요)?[.!?]+\s+/gu,
-          ),
-        ];
-        const lastBoundary = boundaries[boundaries.length - 1];
-        const sentence =
-          lastBoundary?.index === undefined
-            ? recognizedText
-            : recognizedText
-                .slice(lastBoundary.index + lastBoundary[0].length)
-                .trim() || recognizedText;
-        void translateSourceText(sentence);
+        void translateSourceText(recognizedText);
       }, SPEECH_STABILITY_DELAY_MS);
+
+      const endsWithBoundary = /[.!?]$/u.test(recognizedText.trim());
+      if (endsWithBoundary) {
+        if (utteranceSilenceTimeoutRef.current) {
+          clearTimeout(utteranceSilenceTimeoutRef.current);
+        }
+        utteranceSilenceTimeoutRef.current = setTimeout(() => {
+          if (
+            shouldListenRef.current &&
+            pendingInterimTextRef.current === recognizedText &&
+            latestSourceTextRef.current === recognizedText
+          ) {
+            void finalizeRecognizedText(recognizedText, "punctuation");
+          }
+        }, UTTERANCE_SILENCE_MS);
+        return;
+      }
+
+      if (utteranceSilenceTimeoutRef.current) {
+        clearTimeout(utteranceSilenceTimeoutRef.current);
+      }
+      utteranceSilenceTimeoutRef.current = setTimeout(() => {
+        if (
+          shouldListenRef.current &&
+          pendingInterimTextRef.current === recognizedText &&
+          latestSourceTextRef.current === recognizedText
+        ) {
+          void finalizeRecognizedText(recognizedText, "pause");
+        }
+      }, UTTERANCE_SILENCE_MS);
     };
 
     const subscriptions = [
@@ -523,6 +574,10 @@ export function useSpeechTranslation({
         isRecordingRef.current = false;
         setIsRecording(false);
         soundLevel.setValue(0);
+        if (utteranceSilenceTimeoutRef.current) {
+          clearTimeout(utteranceSilenceTimeoutRef.current);
+          utteranceSilenceTimeoutRef.current = null;
+        }
         if (shouldListenRef.current) {
           setStatus("Listening paused; restarting microphone...");
           scheduleRestart();
@@ -603,6 +658,10 @@ export function useSpeechTranslation({
         clearTimeout(stabilityTimeoutRef.current);
         stabilityTimeoutRef.current = null;
       }
+      if (utteranceSilenceTimeoutRef.current) {
+        clearTimeout(utteranceSilenceTimeoutRef.current);
+        utteranceSilenceTimeoutRef.current = null;
+      }
       ExpoSpeechRecognitionModule.abort();
       subscriptions.forEach((subscription) => subscription.remove());
     };
@@ -616,6 +675,10 @@ export function useSpeechTranslation({
       if (stabilityTimeoutRef.current) {
         clearTimeout(stabilityTimeoutRef.current);
         stabilityTimeoutRef.current = null;
+      }
+      if (utteranceSilenceTimeoutRef.current) {
+        clearTimeout(utteranceSilenceTimeoutRef.current);
+        utteranceSilenceTimeoutRef.current = null;
       }
       pendingInterimTextRef.current = "";
       isRecordingRef.current = false;
