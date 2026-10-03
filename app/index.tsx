@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useKeepAwake } from "expo-keep-awake";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   Download,
@@ -51,7 +51,6 @@ const FONT_SIZES: Record<FontSizeMode, number> = {
 const languageAnimatedOpacity = new Animated.Value(1);
 const historySlide = new Animated.Value(420);
 const settingsSlide = new Animated.Value(420);
-const micScale = new Animated.Value(1);
 
 export default function HomeScreen() {
   const systemTheme = useColorScheme();
@@ -163,15 +162,6 @@ export default function HomeScreen() {
   });
 
   useEffect(() => {
-    Animated.spring(micScale, {
-      toValue: speech.isRecording ? 1.12 : 1,
-      friction: 6,
-      tension: 120,
-      useNativeDriver: true,
-    }).start();
-  }, [speech.isRecording]);
-
-  useEffect(() => {
     Animated.timing(historySlide, {
       toValue: historyVisible ? 0 : 420,
       duration: 220,
@@ -190,13 +180,6 @@ export default function HomeScreen() {
   const targetLanguage = direction === "ko-to-en" ? "English" : "Korean";
   const currentLanguageLabel = direction === "ko-to-en" ? "한국어" : "English";
 
-  const transcriptScrollViewRef = useRef<ScrollView | null>(null);
-  const isNearBottomRef = useRef(true);
-  const waveformBars = useMemo(
-    () => Array.from({ length: 18 }, () => new Animated.Value(0.16)),
-    [],
-  );
-
   const transcriptText = useMemo(
     () =>
       direction === "ko-to-en"
@@ -210,56 +193,6 @@ export default function HomeScreen() {
       `${targetLanguage} translation will appear here.`,
     [speech.translationText, targetLanguage],
   );
-  const completedEntries = useMemo(
-    () => [...entries].reverse(),
-    [entries],
-  );
-
-  useEffect(() => {
-    waveformBars.forEach((bar, index) => {
-      const intensity =
-        typeof (speech.soundLevel as Animated.Value & { __getValue?: () => number })
-          .__getValue === "function"
-          ?
-              ((speech.soundLevel as Animated.Value & {
-                __getValue?: () => number;
-              }).__getValue?.() ?? 0)
-          : 0;
-      const target =
-        speech.isRecording
-          ? 0.2 + intensity * (0.95 + Math.sin(index * 0.9) * 0.2)
-          : 0.14 + (index % 3) * 0.04;
-
-      Animated.timing(bar, {
-        toValue: target,
-        duration: 140,
-        useNativeDriver: true,
-      }).start();
-    });
-  }, [speech.isRecording, speech.soundLevel, waveformBars]);
-
-  useEffect(() => {
-    if (!transcriptScrollViewRef.current) return;
-    if (speech.isRecording || entries.length > 0) {
-      if (isNearBottomRef.current) {
-        transcriptScrollViewRef.current.scrollToEnd({ animated: true });
-      }
-    }
-  }, [entries.length, speech.isRecording, speech.sourceText]);
-
-  const handleTranscriptScroll = (event: {
-    nativeEvent: {
-      contentOffset: { y: number };
-      layoutMeasurement: { height: number };
-      contentSize: { height: number };
-    };
-  }) => {
-    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
-    const distanceFromBottom =
-      contentSize.height - (contentOffset.y + layoutMeasurement.height);
-    isNearBottomRef.current = distanceFromBottom < 120;
-  };
-
   const handleHistoryExport = async () => {
     await exportSessionLog("", "", false);
   };
@@ -307,13 +240,7 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
-      <ScrollView
-        ref={transcriptScrollViewRef}
-        style={styles.liveArea}
-        contentContainerStyle={styles.liveAreaContent}
-        onScroll={handleTranscriptScroll}
-        scrollEventThrottle={80}
-      >
+      <View style={styles.liveArea}>
         <Pressable
           accessibilityRole="button"
           onPress={() => setHistoryVisible(true)}
@@ -350,75 +277,7 @@ export default function HomeScreen() {
           </Text>
         </View>
 
-        {speech.isRecording ? (
-          <View style={styles.waveformShell}>
-            <View style={styles.waveformRow}>
-              {waveformBars.map((bar, index) => (
-                <Animated.View
-                  key={`wave-${index}`}
-                  style={[
-                    styles.waveBar,
-                    {
-                      backgroundColor:
-                        index % 3 === 0 ? theme.accent : theme.primary,
-                    },
-                    {
-                      height: bar.interpolate({
-                        inputRange: [0.12, 1],
-                        outputRange: [8, 42],
-                      }),
-                      opacity: bar.interpolate({
-                        inputRange: [0.12, 1],
-                        outputRange: [0.3, 1],
-                      }),
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        <View style={styles.completedSection}>
-          <Text style={[styles.sectionHeader, { color: theme.primary }]}>
-            Completed utterances
-          </Text>
-
-          {completedEntries.length === 0 ? (
-            <Text style={[styles.emptyTranscriptText, { color: theme.secondary }]}>
-              Finished sentences will appear here once you start speaking.
-            </Text>
-          ) : (
-            completedEntries.map((entry) => (
-              <View
-                key={entry.id}
-                style={[
-                  styles.entryCard,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.panelAlt,
-                  },
-                ]}
-              >
-                <Text style={[styles.entryTimestamp, { color: theme.muted }]}>
-                  {entry.timestamp}
-                </Text>
-                <Text style={[styles.entryText, { color: theme.primary }]}>
-                  {entry.ko}
-                </Text>
-                <Text
-                  style={[
-                    styles.entryTranslation,
-                    { color: theme.secondary },
-                  ]}
-                >
-                  {entry.en}
-                </Text>
-              </View>
-            ))
-          )}
-        </View>
-      </ScrollView>
+      </View>
 
       <View style={styles.bottomBar}>
         <Pressable
@@ -470,7 +329,17 @@ export default function HomeScreen() {
             style={[
               styles.micInner,
               {
-                transform: [{ scale: micScale }],
+                transform: [
+                  {
+                    scale: speech.isRecording
+                      ? speech.soundLevel.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 1.2],
+                          extrapolate: "clamp",
+                        })
+                      : 1,
+                  },
+                ],
                 backgroundColor: speech.isRecording ? theme.danger : theme.buttonBg,
                 shadowColor: speech.isRecording ? theme.danger : theme.shadow,
                 shadowOpacity: speech.isRecording ? 0.45 : 0.12,
@@ -777,10 +646,8 @@ const styles = StyleSheet.create({
   },
   liveArea: {
     flex: 1,
+    justifyContent: "center",
     paddingTop: 8,
-  },
-  liveAreaContent: {
-    paddingBottom: 12,
   },
   historyHint: {
     alignItems: "center",
@@ -795,61 +662,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 18,
     marginBottom: 18,
-  },
-  waveformShell: {
-    marginBottom: 22,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 18,
-    backgroundColor: "rgba(0, 0, 0, 0.02)",
-  },
-  waveformRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    height: 46,
-    gap: 4,
-  },
-  waveBar: {
-    flex: 1,
-    borderRadius: 999,
-    minHeight: 8,
-    maxHeight: 42,
-  },
-  completedSection: {
-    gap: 10,
-    marginBottom: 18,
-  },
-  sectionHeader: {
-    fontSize: 17,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  emptyTranscriptText: {
-    fontSize: 14,
-    lineHeight: 20,
-    paddingVertical: 8,
-  },
-  entryCard: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-  },
-  entryTimestamp: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    marginBottom: 8,
-    textTransform: "uppercase",
-  },
-  entryText: {
-    fontSize: 17,
-    lineHeight: 26,
-    marginBottom: 8,
-  },
-  entryTranslation: {
-    fontSize: 16,
-    lineHeight: 24,
   },
   listeningLabel: {
     fontSize: 26,

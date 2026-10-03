@@ -15,7 +15,6 @@ import type { TranslationDirection } from "@/types/translation";
 const SPEECH_STABILITY_DELAY_MS = 400;
 const FINAL_DUPLICATE_WINDOW_MS = 2500;
 const UTTERANCE_SILENCE_MS = 1200;
-const FINAL_BOUNDARY_PATTERN = /[.!?](?:\s|$)/u;
 
 type SpeechTranslationOptions = {
   enabled: boolean;
@@ -315,6 +314,7 @@ export function useSpeechTranslation({
       if (latestSourceTextRef.current === text) return;
       latestSourceTextRef.current = text;
       setSourceText((current) => (current === text ? current : text));
+      translationRequestRef.current += 1;
     };
 
     const applyTranslation = (
@@ -448,8 +448,10 @@ export function useSpeechTranslation({
         return;
       }
 
+      const isNewUtterance = pendingInterimTextRef.current.length === 0;
       recentFinalTextsRef.current.set(duplicateKey, now);
-      latestSourceTextRef.current = "";
+      updateSourceTranscript(normalizedText);
+      if (isNewUtterance) setTranslationText("");
       pendingInterimTextRef.current = "";
       if (stabilityTimeoutRef.current) {
         clearTimeout(stabilityTimeoutRef.current);
@@ -459,9 +461,6 @@ export function useSpeechTranslation({
         clearTimeout(utteranceSilenceTimeoutRef.current);
         utteranceSilenceTimeoutRef.current = null;
       }
-      setSourceText("");
-      setTranslationText("");
-
       if (__DEV__) {
         console.log(`[Speech] finalize (${reason}): ${normalizedText}`);
       }
@@ -509,8 +508,10 @@ export function useSpeechTranslation({
       }
       if (pendingInterimTextRef.current === recognizedText) return;
 
+      const isNewUtterance = pendingInterimTextRef.current.length === 0;
       pendingInterimTextRef.current = recognizedText;
       updateSourceTranscript(recognizedText);
+      if (isNewUtterance) setTranslationText("");
       if (stabilityTimeoutRef.current) {
         clearTimeout(stabilityTimeoutRef.current);
       }
