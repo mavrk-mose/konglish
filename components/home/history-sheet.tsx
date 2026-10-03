@@ -1,13 +1,13 @@
-import { Download, Pencil } from "lucide-react-native";
 import {
-  Animated,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetScrollView,
+  BottomSheetView,
+  useBottomSheetSpringConfigs,
+} from "@gorhom/bottom-sheet";
+import { Download, Pencil } from "lucide-react-native";
+import { useCallback, useEffect, useRef } from "react";
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import { AppTheme } from "@/constants/theme";
 import type { TranscriptEntry } from "@/types/transcript";
@@ -18,7 +18,6 @@ type HistorySheetProps = {
   visible: boolean;
   entries: TranscriptEntry[];
   theme: ScreenTheme;
-  historySlide: Animated.Value;
   onDismiss: () => void;
   onExport: () => void;
   onEditEntry: (entry: TranscriptEntry) => void;
@@ -28,33 +27,64 @@ export function HistorySheet({
   visible,
   entries,
   theme,
-  historySlide,
   onDismiss,
   onExport,
   onEditEntry,
 }: HistorySheetProps) {
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
+  const { height: windowHeight } = useWindowDimensions();
+  const animationConfigs = useBottomSheetSpringConfigs({
+    damping: 80,
+    stiffness: 500,
+  });
+
+  useEffect(() => {
+    if (visible) {
+      bottomSheetRef.current?.present();
+    } else {
+      bottomSheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const renderBackdrop = useCallback(
+    (props: React.ComponentProps<typeof BottomSheetBackdrop>) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.45}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
   return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="none"
-      onRequestClose={onDismiss}
+    <BottomSheetModal
+      ref={bottomSheetRef}
+      animationConfigs={animationConfigs}
+      backgroundStyle={[
+        styles.sheetBackground,
+        { backgroundColor: theme.panel },
+      ]}
+      backdropComponent={renderBackdrop}
+      enableDynamicSizing
+      enablePanDownToClose
+      handleIndicatorStyle={{ backgroundColor: theme.muted }}
+      maxDynamicContentSize={windowHeight * 0.75}
+      onDismiss={onDismiss}
     >
-      <Pressable style={styles.modalBackdrop} onPress={onDismiss} />
-      <Animated.View
-        style={[
-          styles.modalSheet,
-          {
-            backgroundColor: theme.panel,
-            transform: [{ translateY: historySlide }],
-          },
-        ]}
-      >
+      <BottomSheetView style={styles.sheetContent}>
         <View style={styles.sheetHeader}>
-          <Text style={[styles.sheetTitle, { color: theme.primary }]}>History</Text>
+          <Text style={[styles.sheetTitle, { color: theme.primary }]}>
+            History
+          </Text>
           <Pressable
             onPress={onExport}
-            style={[styles.exportInline, { backgroundColor: theme.accentSoft }]}
+            style={[
+              styles.exportInline,
+              { backgroundColor: theme.accentSoft },
+            ]}
           >
             <Download color={theme.primary} size={16} strokeWidth={2} />
             <Text style={[styles.exportInlineText, { color: theme.primary }]}>
@@ -73,7 +103,7 @@ export function HistorySheet({
             </Text>
           </View>
         ) : (
-          <ScrollView
+          <BottomSheetScrollView
             style={styles.historyList}
             contentContainerStyle={styles.historyContent}
           >
@@ -89,7 +119,9 @@ export function HistorySheet({
                 ]}
               >
                 <View style={styles.historyMetaRow}>
-                  <Text style={[styles.historyTimestamp, { color: theme.muted }]}>
+                  <Text
+                    style={[styles.historyTimestamp, { color: theme.muted }]}
+                  >
                     {entry.timestamp}
                   </Text>
                   <View style={styles.historyActionsInline}>
@@ -99,7 +131,11 @@ export function HistorySheet({
                       onPress={() => onEditEntry(entry)}
                       style={styles.historyAction}
                     >
-                      <Pencil color={theme.primary} size={16} strokeWidth={2} />
+                      <Pencil
+                        color={theme.primary}
+                        size={16}
+                        strokeWidth={2}
+                      />
                     </Pressable>
                     <Pressable
                       accessibilityRole="button"
@@ -107,17 +143,31 @@ export function HistorySheet({
                       onPress={onExport}
                       style={styles.historyAction}
                     >
-                      <Download color={theme.primary} size={17} strokeWidth={2} />
+                      <Download
+                        color={theme.primary}
+                        size={17}
+                        strokeWidth={2}
+                      />
                     </Pressable>
                   </View>
                 </View>
-                <Text style={[styles.historyTextLabel, { color: theme.secondary }]}>
+                <Text
+                  style={[
+                    styles.historyTextLabel,
+                    { color: theme.secondary },
+                  ]}
+                >
                   Original
                 </Text>
                 <Text style={[styles.historyText, { color: theme.primary }]}>
                   {entry.ko}
                 </Text>
-                <Text style={[styles.historyTextLabel, { color: theme.secondary }]}>
+                <Text
+                  style={[
+                    styles.historyTextLabel,
+                    { color: theme.secondary },
+                  ]}
+                >
                   Translation
                 </Text>
                 <Text style={[styles.historyText, { color: theme.accent }]}>
@@ -125,29 +175,22 @@ export function HistorySheet({
                 </Text>
               </View>
             ))}
-          </ScrollView>
+          </BottomSheetScrollView>
         )}
-      </Animated.View>
-    </Modal>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  modalBackdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  modalSheet: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
+  sheetBackground: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
+  },
+  sheetContent: {
     paddingHorizontal: 22,
     paddingTop: 18,
     paddingBottom: 28,
-    maxHeight: "75%",
   },
   sheetHeader: {
     flexDirection: "row",

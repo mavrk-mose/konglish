@@ -35,9 +35,6 @@ const FONT_SIZES: Record<FontSizeMode, number> = {
 };
 
 const languageAnimatedOpacity = new Animated.Value(1);
-const historySlide = new Animated.Value(420);
-const settingsSlide = new Animated.Value(420);
-
 export default function HomeScreen() {
   const systemTheme = useColorScheme();
   const [direction, setDirection] = useState<TranslationDirection>("ko-to-en");
@@ -147,22 +144,6 @@ export default function HomeScreen() {
     onTranscriptComplete: appendTranscriptEntry,
   });
 
-  useEffect(() => {
-    Animated.timing(historySlide, {
-      toValue: historyVisible ? 0 : 420,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-  }, [historyVisible]);
-
-  useEffect(() => {
-    Animated.timing(settingsSlide, {
-      toValue: settingsVisible ? 0 : 420,
-      duration: 220,
-      useNativeDriver: true,
-    }).start();
-  }, [settingsVisible]);
-
   const targetLanguage = direction === "ko-to-en" ? "English" : "Korean";
   const currentLanguageLabel = direction === "ko-to-en" ? "한국어" : "English";
 
@@ -244,7 +225,6 @@ export default function HomeScreen() {
         visible={historyVisible}
         entries={entries}
         theme={theme}
-        historySlide={historySlide}
         onDismiss={() => setHistoryVisible(false)}
         onExport={handleHistoryExport}
         onEditEntry={(entry) => startEditingEntry(entry)}
@@ -255,7 +235,6 @@ export default function HomeScreen() {
         theme={theme}
         themeMode={themeMode}
         fontSizeMode={fontSizeMode}
-        settingsSlide={settingsSlide}
         onDismiss={() => setSettingsVisible(false)}
         onToggleTheme={() =>
           setThemeMode((current) => (current === "dark" ? "light" : "dark"))

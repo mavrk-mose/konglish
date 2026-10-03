@@ -1,4 +1,11 @@
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetView,
+  useBottomSheetSpringConfigs,
+} from "@gorhom/bottom-sheet";
+import { useCallback, useEffect, useRef } from "react";
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 
 import { AppTheme } from "@/constants/theme";
 
@@ -11,7 +18,6 @@ type SettingsSheetProps = {
   theme: ScreenTheme;
   themeMode: ThemeMode;
   fontSizeMode: FontSizeMode;
-  settingsSlide: Animated.Value;
   onDismiss: () => void;
   onToggleTheme: () => void;
   onSetFontSize: (size: FontSizeMode) => void;
@@ -23,33 +29,63 @@ export function SettingsSheet({
   theme,
   themeMode,
   fontSizeMode,
-  settingsSlide,
   onDismiss,
   onToggleTheme,
   onSetFontSize,
   onDeleteAllHistory,
 }: SettingsSheetProps) {
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
+  const { height: windowHeight } = useWindowDimensions();
+  const animationConfigs = useBottomSheetSpringConfigs({
+    damping: 80,
+    stiffness: 500,
+  });
+
+  useEffect(() => {
+    if (visible) {
+      bottomSheetRef.current?.present();
+    } else {
+      bottomSheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const renderBackdrop = useCallback(
+    (props: React.ComponentProps<typeof BottomSheetBackdrop>) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.45}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
   return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="none"
-      onRequestClose={onDismiss}
+    <BottomSheetModal
+      ref={bottomSheetRef}
+      animationConfigs={animationConfigs}
+      backgroundStyle={[
+        styles.sheetBackground,
+        { backgroundColor: theme.panel },
+      ]}
+      backdropComponent={renderBackdrop}
+      enableDynamicSizing
+      enablePanDownToClose
+      handleIndicatorStyle={{ backgroundColor: theme.muted }}
+      maxDynamicContentSize={windowHeight * 0.75}
+      onDismiss={onDismiss}
     >
-      <Pressable style={styles.modalBackdrop} onPress={onDismiss} />
-      <Animated.View
-        style={[
-          styles.modalSheet,
-          {
-            backgroundColor: theme.panel,
-            transform: [{ translateY: settingsSlide }],
-          },
-        ]}
-      >
-        <Text style={[styles.sheetTitle, { color: theme.primary }]}>Settings</Text>
+      <BottomSheetView style={styles.sheetContent}>
+        <Text style={[styles.sheetTitle, { color: theme.primary }]}>
+          Settings
+        </Text>
 
         <View style={styles.settingSection}>
-          <Text style={[styles.settingLabel, { color: theme.secondary }]}>Appearance</Text>
+          <Text style={[styles.settingLabel, { color: theme.secondary }]}>
+            Appearance
+          </Text>
           <View style={[styles.settingRow, { backgroundColor: theme.panelAlt }]}>
             <Text style={[styles.settingText, { color: theme.primary }]}>
               {themeMode === "dark" ? "Dark mode" : "Light mode"}
@@ -79,9 +115,14 @@ export function SettingsSheet({
         </View>
 
         <View style={styles.settingSection}>
-          <Text style={[styles.settingLabel, { color: theme.secondary }]}>Font size</Text>
+          <Text style={[styles.settingLabel, { color: theme.secondary }]}>
+            Font size
+          </Text>
           <View
-            style={[styles.segmentedControl, { backgroundColor: theme.panelAlt }]}
+            style={[
+              styles.segmentedControl,
+              { backgroundColor: theme.panelAlt },
+            ]}
           >
             {(["small", "medium", "large"] as FontSizeMode[]).map((size) => (
               <Pressable
@@ -100,7 +141,9 @@ export function SettingsSheet({
                     styles.segmentText,
                     {
                       color:
-                        fontSizeMode === size ? theme.buttonText : theme.primary,
+                        fontSizeMode === size
+                          ? theme.buttonText
+                          : theme.primary,
                     },
                   ]}
                 >
@@ -119,27 +162,20 @@ export function SettingsSheet({
             Delete all history
           </Text>
         </Pressable>
-      </Animated.View>
-    </Modal>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  modalBackdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  modalSheet: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
+  sheetBackground: {
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
+  },
+  sheetContent: {
     paddingHorizontal: 22,
     paddingTop: 18,
     paddingBottom: 28,
-    maxHeight: "75%",
   },
   sheetTitle: {
     fontSize: 24,
