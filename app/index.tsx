@@ -226,14 +226,6 @@ export default function HomeScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       {speech.isListeningEnabled && <KeepAwakeWhileListening />}
 
-      <View style={styles.statusBar}>
-        <Text style={[styles.statusTime, { color: theme.primary }]}>12:53</Text>
-        <View style={styles.statusRight}>
-          <Text style={[styles.statusChip, { color: theme.primary }]}>LTE</Text>
-          <Text style={[styles.statusChip, { color: theme.primary }]}>22+</Text>
-        </View>
-      </View>
-
       <View style={styles.topRow}>
         <View style={styles.spacer} />
         <Pressable
