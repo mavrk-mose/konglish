@@ -2,7 +2,6 @@ import {
   BottomSheetBackdrop,
   BottomSheetModal,
   BottomSheetScrollView,
-  BottomSheetView,
   useBottomSheetSpringConfigs,
 } from "@gorhom/bottom-sheet";
 import { Download, Pencil } from "lucide-react-native";
@@ -72,8 +71,11 @@ export function HistorySheet({
       maxDynamicContentSize={windowHeight * 0.75}
       onDismiss={onDismiss}
     >
-      <BottomSheetView style={styles.sheetContent}>
-        <View style={styles.sheetHeader}>
+      <BottomSheetScrollView
+        contentContainerStyle={styles.sheetContent}
+        stickyHeaderIndices={[0]}
+      >
+        <View style={[styles.sheetHeader, { backgroundColor: theme.panel }]}>
           <Text style={[styles.sheetTitle, { color: theme.primary }]}>
             History
           </Text>
@@ -101,81 +103,72 @@ export function HistorySheet({
             </Text>
           </View>
         ) : (
-          <BottomSheetScrollView
-            style={styles.historyList}
-            contentContainerStyle={styles.historyContent}
-          >
-            {[...entries].reverse().map((entry) => (
-              <View
-                key={entry.id}
+          [...entries].reverse().map((entry) => (
+            <View
+              key={entry.id}
+              style={[
+                styles.historyItem,
+                {
+                  borderColor: theme.border,
+                  backgroundColor: theme.panelAlt,
+                },
+              ]}
+            >
+              <View style={styles.historyMetaRow}>
+                <Text
+                  style={[styles.historyTimestamp, { color: theme.muted }]}
+                >
+                  {entry.timestamp}
+                </Text>
+                <View style={styles.historyActionsInline}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit completed translation"
+                    onPress={() => onEditEntry(entry)}
+                    style={styles.historyAction}
+                  >
+                    <Pencil color={theme.primary} size={16} strokeWidth={2} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Export transcript"
+                    onPress={onExport}
+                    style={styles.historyAction}
+                  >
+                    <Download
+                      color={theme.primary}
+                      size={17}
+                      strokeWidth={2}
+                    />
+                  </Pressable>
+                </View>
+              </View>
+              <Text
                 style={[
-                  styles.historyItem,
-                  {
-                    borderColor: theme.border,
-                    backgroundColor: theme.panelAlt,
-                  },
+                  styles.historyTextLabel,
+                  { color: theme.secondary },
                 ]}
               >
-                <View style={styles.historyMetaRow}>
-                  <Text
-                    style={[styles.historyTimestamp, { color: theme.muted }]}
-                  >
-                    {entry.timestamp}
-                  </Text>
-                  <View style={styles.historyActionsInline}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Edit completed translation"
-                      onPress={() => onEditEntry(entry)}
-                      style={styles.historyAction}
-                    >
-                      <Pencil
-                        color={theme.primary}
-                        size={16}
-                        strokeWidth={2}
-                      />
-                    </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Export transcript"
-                      onPress={onExport}
-                      style={styles.historyAction}
-                    >
-                      <Download
-                        color={theme.primary}
-                        size={17}
-                        strokeWidth={2}
-                      />
-                    </Pressable>
-                  </View>
-                </View>
-                <Text
-                  style={[
-                    styles.historyTextLabel,
-                    { color: theme.secondary },
-                  ]}
-                >
-                  Original
-                </Text>
-                <Text style={[styles.historyText, { color: theme.primary }]}>
-                  {entry.ko}
-                </Text>
-                <Text
-                  style={[
-                    styles.historyTextLabel,
-                    { color: theme.secondary },
-                  ]}
-                >
-                  Translation
-                </Text>
-                <Text style={[styles.historyText, { color: theme.accent }]}>
-                  {entry.en}
-                </Text>
-              </View>
-            ))}
-          </BottomSheetScrollView>
+                Original
+              </Text>
+              <Text style={[styles.historyText, { color: theme.primary }]}>
+                {entry.ko}
+              </Text>
+              <Text
+                style={[
+                  styles.historyTextLabel,
+                  { color: theme.secondary },
+                ]}
+              >
+                Translation
+              </Text>
+              <Text style={[styles.historyText, { color: theme.accent }]}>
+                {entry.en}
+              </Text>
+            </View>
+          ))
         )}
-      </BottomSheetView>
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 }
@@ -228,12 +221,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     maxWidth: 280,
-  },
-  historyList: {
-    maxHeight: 400,
-  },
-  historyContent: {
-    paddingBottom: 18,
   },
   historyItem: {
     borderWidth: 1,
