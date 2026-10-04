@@ -123,10 +123,12 @@ export default function HomeScreen() {
     error: modelError,
     retry,
   } = useTranslationModels();
+
   const initialSequence = entries.reduce(
     (highest, entry) => Math.max(highest, entry.sequence),
     0,
   );
+
   const appendTranscriptEntry = useCallback(
     (entry: TranscriptEntry) => {
       updateSavedTranscript((currentEntries) =>
@@ -137,6 +139,7 @@ export default function HomeScreen() {
     },
     [updateSavedTranscript],
   );
+
   const speech = useSpeechTranslation({
     enabled: isReady,
     direction,
@@ -154,6 +157,7 @@ export default function HomeScreen() {
         : speech.sourceText || "Speak English to begin...",
     [direction, speech.sourceText],
   );
+  
   const translatedText = useMemo(
     () =>
       speech.translationText ||

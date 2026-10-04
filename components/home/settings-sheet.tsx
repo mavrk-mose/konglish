@@ -44,8 +44,6 @@ export function SettingsSheet({
   useEffect(() => {
     if (visible) {
       bottomSheetRef.current?.present();
-    } else {
-      bottomSheetRef.current?.dismiss();
     }
   }, [visible]);
 

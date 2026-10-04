@@ -30,7 +30,11 @@ export function LiveTranslationDisplay({
           onPress={onOpenHistory}
           style={[styles.iconButton, { backgroundColor: theme.panelAlt }]}
         >
-          <History color={theme.primary} size={21} strokeWidth={2} />
+          <History 
+            color={theme.primary} 
+            size={21} 
+            strokeWidth={2} 
+          />
         </Pressable>
       </View>
 

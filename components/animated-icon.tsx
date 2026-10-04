@@ -48,6 +48,7 @@ export function AnimatedSplashOverlay() {
           scheduleOnRN(setVisible, false);
         }
       })}
+      pointerEvents="none"
       style={styles.splashOverlay}
     >
       {image}

@@ -41,8 +41,6 @@ export function HistorySheet({
   useEffect(() => {
     if (visible) {
       bottomSheetRef.current?.present();
-    } else {
-      bottomSheetRef.current?.dismiss();
     }
   }, [visible]);
 
