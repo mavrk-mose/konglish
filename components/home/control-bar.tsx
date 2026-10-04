@@ -1,15 +1,103 @@
 import { Mic, Settings } from "lucide-react-native";
+import { useEffect, useState } from "react";
 import { Animated, Pressable, StyleSheet, View } from "react-native";
+import ReanimatedAnimated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 import { AppTheme } from "@/constants/theme";
 
 type ScreenTheme = (typeof AppTheme)[keyof typeof AppTheme];
 
+const LABEL_HEIGHT = 24;
+const TRAVEL = 22;
+
+function SlidingLabel({ label, color }: { label: string; color: string }) {
+  const [state, setState] = useState({
+    current: label,
+    previous: null as string | null,
+    tick: 0,
+  });
+  const progress = useSharedValue(1);
+
+  // Adjust state during render when the prop changes (no effect needed)
+  if (label !== state.current) {
+    setState({
+      current: label,
+      previous: state.current,
+      tick: state.tick + 1,
+    });
+  }
+
+  const clearPrevious = () => setState((s) => ({ ...s, previous: null }));
+
+  // The effect only drives the animation; it never calls setState directly
+  useEffect(() => {
+    if (state.tick === 0) return;
+
+    progress.value = 0;
+    progress.value = withTiming(
+      1,
+      { duration: 280, easing: Easing.out(Easing.cubic) },
+      (finished) => {
+        if (finished) scheduleOnRN(clearPrevious);
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.tick]);
+
+  const outStyle = useAnimatedStyle(() => ({
+    opacity: 1 - progress.value,
+    transform: [{ translateY: -TRAVEL * progress.value }],
+  }));
+
+  const inStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ translateY: TRAVEL * (1 - progress.value) }],
+  }));
+
+  return (
+    <View style={styles.labelClip}>
+      {/* invisible text keeps the button sized to the current label */}
+      <ReanimatedAnimated.Text
+        style={[styles.languageText, { opacity: 0 }]}
+        numberOfLines={1}
+      >
+        {state.current}
+      </ReanimatedAnimated.Text>
+
+      {state.previous !== null && (
+        <ReanimatedAnimated.Text
+          numberOfLines={1}
+          style={[
+            styles.languageText,
+            styles.labelAbsolute,
+            { color },
+            outStyle,
+          ]}
+        >
+          {state.previous}
+        </ReanimatedAnimated.Text>
+      )}
+
+      <ReanimatedAnimated.Text
+        numberOfLines={1}
+        style={[styles.languageText, styles.labelAbsolute, { color }, inStyle]}
+      >
+        {state.current}
+      </ReanimatedAnimated.Text>
+    </View>
+  );
+}
+
 type ControlBarProps = {
   theme: ScreenTheme;
   currentLanguageLabel: string;
   isRecording: boolean;
-  languageAnimatedOpacity: Animated.Value;
   soundLevel: Animated.Value;
   onOpenSettings: () => void;
   onToggleDirection: () => void;
@@ -20,7 +108,6 @@ export function ControlBar({
   theme,
   currentLanguageLabel,
   isRecording,
-  languageAnimatedOpacity,
   soundLevel,
   onOpenSettings,
   onToggleDirection,
@@ -43,21 +130,12 @@ export function ControlBar({
         onPress={onToggleDirection}
         style={[styles.languageButton, { backgroundColor: theme.panelAlt }]}
       >
-        <Animated.Text
-          style={[
-            styles.languageText,
-            { color: theme.primary, opacity: languageAnimatedOpacity },
-          ]}
-        >
-          {currentLanguageLabel}
-        </Animated.Text>
+        <SlidingLabel label={currentLanguageLabel} color={theme.primary} />
       </Pressable>
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={
-          isRecording ? "Stop recording" : "Start recording"
-        }
+        accessibilityLabel={isRecording ? "Stop recording" : "Start recording"}
         onPress={onToggleListening}
         style={[
           styles.micButton,
@@ -126,8 +204,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 18,
   },
+  labelClip: {
+    height: LABEL_HEIGHT,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  labelAbsolute: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    textAlign: "center",
+  },
   languageText: {
     fontSize: 18,
+    lineHeight: LABEL_HEIGHT,
     fontWeight: "700",
   },
   micButton: {
