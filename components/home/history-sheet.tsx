@@ -80,16 +80,15 @@ export function HistorySheet({
             History
           </Text>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Download history"
             onPress={onExport}
             style={[
-              styles.exportInline,
+              styles.headerAction,
               { backgroundColor: theme.accentSoft },
             ]}
           >
-            <Download color={theme.primary} size={16} strokeWidth={2} />
-            <Text style={[styles.exportInlineText, { color: theme.primary }]}>
-              Export
-            </Text>
+            <Download color={theme.primary} size={19} strokeWidth={2} />
           </Pressable>
         </View>
 
@@ -128,18 +127,6 @@ export function HistorySheet({
                     style={styles.historyAction}
                   >
                     <Pencil color={theme.primary} size={16} strokeWidth={2} />
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Export transcript"
-                    onPress={onExport}
-                    style={styles.historyAction}
-                  >
-                    <Download
-                      color={theme.primary}
-                      size={17}
-                      strokeWidth={2}
-                    />
                   </Pressable>
                 </View>
               </View>
@@ -193,17 +180,12 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "700",
   },
-  exportInline: {
+  headerAction: {
+    width: 40,
+    height: 40,
     alignItems: "center",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  exportInlineText: {
-    fontSize: 13,
-    fontWeight: "700",
+    justifyContent: "center",
+    borderRadius: 20,
   },
   emptyState: {
     minHeight: 180,

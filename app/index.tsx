@@ -1,12 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useKeepAwake } from "expo-keep-awake";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, useColorScheme } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ControlBar } from "@/components/home/control-bar";
 import { HistorySheet } from "@/components/home/history-sheet";
-import { LiveTranslationDisplay } from "@/components/home/live-translation-display";
+import {
+  LiveTranslationDisplay,
+  type TranslationItem,
+} from "@/components/home/live-translation-display";
 import { SettingsSheet } from "@/components/home/settings-sheet";
 import { AppTheme } from "@/constants/theme";
 import { OfflineSetup } from "@/components/offline-setup";
@@ -43,7 +46,15 @@ export default function HomeScreen() {
   const [fontSizeMode, setFontSizeMode] = useState<FontSizeMode>("medium");
   const [historyVisible, setHistoryVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [finalizedSegments, setFinalizedSegments] = useState<TranslationItem[]>(
+    [],
+  );
+  const directionRef = useRef(direction);
   const theme = AppTheme[themeMode];
+
+  useEffect(() => {
+    directionRef.current = direction;
+  }, [direction]);
 
   useEffect(() => {
     let isMounted = true;
@@ -120,6 +131,16 @@ export default function HomeScreen() {
           (first, second) => first.sequence - second.sequence,
         ),
       );
+      setFinalizedSegments((currentSegments) => [
+        ...currentSegments,
+        {
+          id: entry.id,
+          transcript:
+            directionRef.current === "ko-to-en" ? entry.ko : entry.en,
+          translation:
+            directionRef.current === "ko-to-en" ? entry.en : entry.ko,
+        },
+      ]);
     },
     [updateSavedTranscript],
   );
@@ -192,6 +213,8 @@ export default function HomeScreen() {
         transcriptText={transcriptText}
         translatedText={translatedText}
         canCopyTranslation={Boolean(speech.translationText?.trim())}
+        hasLiveTranscript={Boolean(speech.sourceText.trim())}
+        finalizedSegments={finalizedSegments}
         onOpenHistory={() => setHistoryVisible(true)}
       />
 
