@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useKeepAwake } from "expo-keep-awake";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Animated, StyleSheet, useColorScheme } from "react-native";
+import { Alert, StyleSheet, useColorScheme } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ControlBar } from "@/components/home/control-bar";
@@ -34,7 +34,6 @@ const FONT_SIZES: Record<FontSizeMode, number> = {
   large: 28,
 };
 
-const languageAnimatedOpacity = new Animated.Value(1);
 export default function HomeScreen() {
   const systemTheme = useColorScheme();
   const [direction, setDirection] = useState<TranslationDirection>("ko-to-en");
@@ -87,21 +86,6 @@ export default function HomeScreen() {
   useEffect(() => {
     void AsyncStorage.setItem(FONT_SIZE_STORAGE_KEY, fontSizeMode);
   }, [fontSizeMode]);
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.timing(languageAnimatedOpacity, {
-        toValue: 0.45,
-        duration: 130,
-        useNativeDriver: true,
-      }),
-      Animated.timing(languageAnimatedOpacity, {
-        toValue: 1,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [direction]);
 
   const {
     entries,
@@ -207,6 +191,7 @@ export default function HomeScreen() {
         fontSize={FONT_SIZES[fontSizeMode]}
         transcriptText={transcriptText}
         translatedText={translatedText}
+        canCopyTranslation={Boolean(speech.translationText?.trim())}
         onOpenHistory={() => setHistoryVisible(true)}
       />
 
@@ -214,7 +199,6 @@ export default function HomeScreen() {
         theme={theme}
         currentLanguageLabel={currentLanguageLabel}
         isRecording={speech.isRecording}
-        languageAnimatedOpacity={languageAnimatedOpacity}
         soundLevel={speech.soundLevel}
         onOpenSettings={() => setSettingsVisible(true)}
         onToggleDirection={() =>

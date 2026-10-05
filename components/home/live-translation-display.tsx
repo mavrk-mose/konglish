@@ -1,5 +1,7 @@
+import * as Clipboard from "expo-clipboard";
 import { History } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppTheme } from "@/constants/theme";
 
@@ -10,6 +12,7 @@ type LiveTranslationDisplayProps = {
   fontSize: number;
   transcriptText: string;
   translatedText: string;
+  canCopyTranslation: boolean;
   onOpenHistory: () => void;
 };
 
@@ -18,8 +21,36 @@ export function LiveTranslationDisplay({
   fontSize,
   transcriptText,
   translatedText,
+  canCopyTranslation,
   onOpenHistory,
 }: LiveTranslationDisplayProps) {
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimeout.current) clearTimeout(copyTimeout.current);
+    },
+    [],
+  );
+
+  const copyTranslation = async () => {
+    if (!canCopyTranslation) return;
+
+    try {
+      await Clipboard.setStringAsync(translatedText);
+      setCopiedText(translatedText);
+      if (copyTimeout.current) clearTimeout(copyTimeout.current);
+      copyTimeout.current = setTimeout(() => {
+        setCopiedText(null);
+        copyTimeout.current = null;
+      }, 1500);
+    } catch (error) {
+      console.error("Failed to copy translation", error);
+      Alert.alert("Couldn't copy translation", "Please try again.");
+    }
+  };
+
   return (
     <>
       <View style={styles.topRow}>
@@ -48,17 +79,35 @@ export function LiveTranslationDisplay({
           >
             {transcriptText}
           </Text>
-          <Text
-            style={[
-              styles.translationText,
-              {
-                color: theme.secondary,
-                fontSize: fontSize * 0.9,
-              },
-            ]}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              copiedText === translatedText
+                ? "Translation copied"
+                : "Copy translation"
+            }
+            accessibilityHint="Copies the translated text to the clipboard"
+            accessibilityState={{ disabled: !canCopyTranslation }}
+            disabled={!canCopyTranslation}
+            onPress={() => void copyTranslation()}
           >
-            {translatedText}
-          </Text>
+            <Text
+              style={[
+                styles.translationText,
+                {
+                  color: theme.secondary,
+                  fontSize: fontSize * 0.9,
+                },
+              ]}
+            >
+              {translatedText}
+            </Text>
+            {copiedText === translatedText && (
+              <Text style={[styles.copiedLabel, { color: theme.secondary }]}>
+                Copied
+              </Text>
+            )}
+          </Pressable>
         </View>
       </View>
     </>
@@ -102,5 +151,10 @@ const styles = StyleSheet.create({
   translationText: {
     fontWeight: "500",
     lineHeight: 28,
+  },
+  copiedLabel: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
   },
 });
