@@ -113,6 +113,7 @@ export function LiveTranslationDisplay({
   finalizedSegments,
   onOpenSearch,
 }: LiveTranslationDisplayProps) {
+  // Stored oldest -> newest
   const [history, setHistory] = useState<TranslationItem[]>(loadLiveHistory);
   const [copiedItem, setCopiedItem] = useState<{
     id: string;
@@ -122,7 +123,6 @@ export function LiveTranslationDisplay({
   const listRef = useRef<FlatList<TranslationItem>>(null);
   const processedIds = useRef(new Set<string>());
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const shouldAutoScroll = useRef(true);
 
   useEffect(() => {
     for (const item of history) processedIds.current.add(item.id);
@@ -152,6 +152,9 @@ export function LiveTranslationDisplay({
     [],
   );
 
+  // Inverted list renders data[0] at the bottom, so feed it newest-first.
+  const invertedHistory = useMemo(() => [...history].reverse(), [history]);
+
   const liveItem = useMemo<TranslationItem | null>(() => {
     if (!hasLiveTranscript || transcriptText.trim().length === 0) return null;
 
@@ -168,12 +171,7 @@ export function LiveTranslationDisplay({
       transcript: transcriptText,
       translation: translatedText,
     };
-  }, [
-    hasLiveTranscript,
-    history,
-    transcriptText,
-    translatedText,
-  ]);
+  }, [hasLiveTranscript, history, transcriptText, translatedText]);
 
   const copyTranslation = useCallback(async (item: TranslationItem) => {
     if (!item.translation.trim()) return;
@@ -209,9 +207,11 @@ export function LiveTranslationDisplay({
     [copiedItem, copyTranslation, fontSize, theme],
   );
 
-  const liveFooter = useMemo(
-    () =>
-      liveItem ? (
+  // In an inverted list the "header" is visually at the bottom: this is the
+  // live transcript, or the "Speak ... to begin" prompt when nothing is live.
+  const liveHeader = useMemo(() => {
+    if (liveItem) {
+      return (
         <TranslationRow
           item={liveItem}
           theme={theme}
@@ -223,39 +223,12 @@ export function LiveTranslationDisplay({
           }
           onCopy={copyTranslation}
         />
-      ) : null,
-    [canCopyTranslation, copiedItem, copyTranslation, fontSize, liveItem, theme],
-  );
-
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } =
-        event.nativeEvent;
-      const nearBottom =
-        contentSize.height - layoutMeasurement.height - contentOffset.y <=
-        BOTTOM_THRESHOLD;
-      shouldAutoScroll.current = nearBottom;
-      setShowJumpToLatest(!nearBottom);
-    },
-    [],
-  );
-
-  const handleContentSizeChange = useCallback(() => {
-    if (shouldAutoScroll.current) {
-      listRef.current?.scrollToEnd({ animated: true });
-    } else {
-      setShowJumpToLatest(true);
+      );
     }
-  }, []);
 
-  const jumpToLatest = useCallback(() => {
-    shouldAutoScroll.current = true;
-    setShowJumpToLatest(false);
-    listRef.current?.scrollToEnd({ animated: true });
-  }, []);
+    if (hasLiveTranscript) return null;
 
-  const emptyContent = useMemo(
-    () => (
+    return (
       <View style={styles.messagePair}>
         <Text
           style={[
@@ -282,9 +255,32 @@ export function LiveTranslationDisplay({
           {translatedText}
         </Text>
       </View>
-    ),
-    [fontSize, theme, transcriptText, translatedText],
+    );
+  }, [
+    canCopyTranslation,
+    copiedItem,
+    copyTranslation,
+    fontSize,
+    hasLiveTranscript,
+    liveItem,
+    theme,
+    transcriptText,
+    translatedText,
+  ]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // Inverted: offset 0 is the bottom (latest).
+      setShowJumpToLatest(
+        event.nativeEvent.contentOffset.y > BOTTOM_THRESHOLD,
+      );
+    },
+    [],
   );
+
+  const jumpToLatest = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -302,19 +298,24 @@ export function LiveTranslationDisplay({
       <View style={styles.liveArea}>
         <FlatList
           ref={listRef}
-          data={history}
+          inverted
+          data={invertedHistory}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          ListEmptyComponent={
-            history.length === 0 && !liveItem ? emptyContent : null
-          }
-          ListFooterComponent={liveFooter}
+          ListHeaderComponent={liveHeader}
           contentContainerStyle={styles.listContent}
           onScroll={handleScroll}
-          onContentSizeChange={handleContentSizeChange}
           scrollEventThrottle={16}
           extraData={copiedItem}
           keyboardShouldPersistTaps="handled"
+          initialNumToRender={12}
+          windowSize={7}
+          // Stay pinned to the latest entry if you're at the bottom, but
+          // don't yank you down while you're reading older entries.
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 0,
+            autoscrollToTopThreshold: BOTTOM_THRESHOLD,
+          }}
         />
         {showJumpToLatest && (
           <Pressable
@@ -358,10 +359,13 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 8,
   },
+  // Inverted lists flip the container, so these paddings are swapped:
+  // paddingTop = visual bottom (room for the jump button),
+  // paddingBottom = visual top.
   listContent: {
     flexGrow: 1,
-    paddingTop: 12,
-    paddingBottom: 76,
+    paddingTop: 76,
+    paddingBottom: 12,
   },
   messagePair: {
     gap: 8,
