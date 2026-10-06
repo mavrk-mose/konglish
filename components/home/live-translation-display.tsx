@@ -1,4 +1,5 @@
 import * as Clipboard from "expo-clipboard";
+import { Search } from "lucide-react-native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -10,17 +11,17 @@ import {
   Text,
   View,
 } from "react-native";
-import { createMMKV } from "react-native-mmkv";
 
 import { AppTheme } from "@/constants/theme";
+import {
+  appendLiveHistory,
+  loadLiveHistory,
+} from "@/lib/live-translation-history";
+import type { TranslationItem } from "@/types/live-translation";
+
+export type { TranslationItem } from "@/types/live-translation";
 
 type ScreenTheme = (typeof AppTheme)[keyof typeof AppTheme];
-
-export type TranslationItem = {
-  id: string;
-  transcript: string;
-  translation: string;
-};
 
 type LiveTranslationDisplayProps = {
   theme: ScreenTheme;
@@ -30,6 +31,7 @@ type LiveTranslationDisplayProps = {
   canCopyTranslation: boolean;
   hasLiveTranscript: boolean;
   finalizedSegments: TranslationItem[];
+  onOpenSearch: () => void;
 };
 
 type TranslationRowProps = {
@@ -42,30 +44,6 @@ type TranslationRowProps = {
 };
 
 const BOTTOM_THRESHOLD = 48;
-const LIVE_HISTORY_STORAGE_KEY = "konglish.live-translation-history";
-const liveHistoryStorage = createMMKV({ id: "konglish-live-history" });
-
-function loadLiveHistory(): TranslationItem[] {
-  try {
-    const savedHistory = liveHistoryStorage.getString(LIVE_HISTORY_STORAGE_KEY);
-    if (!savedHistory) return [];
-
-    const parsedHistory: unknown = JSON.parse(savedHistory);
-    if (!Array.isArray(parsedHistory)) return [];
-
-    return parsedHistory.filter(
-      (item): item is TranslationItem =>
-        typeof item === "object" &&
-        item !== null &&
-        typeof item.id === "string" &&
-        typeof item.transcript === "string" &&
-        typeof item.translation === "string",
-    );
-  } catch (error) {
-    console.warn("Could not load live translation history:", error);
-    return [];
-  }
-}
 
 const TranslationRow = memo(function TranslationRow({
   item,
@@ -133,6 +111,7 @@ export function LiveTranslationDisplay({
   canCopyTranslation,
   hasLiveTranscript,
   finalizedSegments,
+  onOpenSearch,
 }: LiveTranslationDisplayProps) {
   const [history, setHistory] = useState<TranslationItem[]>(loadLiveHistory);
   const [copiedItem, setCopiedItem] = useState<{
@@ -146,22 +125,23 @@ export function LiveTranslationDisplay({
   const shouldAutoScroll = useRef(true);
 
   useEffect(() => {
-    try {
-      liveHistoryStorage.set(LIVE_HISTORY_STORAGE_KEY, JSON.stringify(history));
-    } catch (error) {
-      console.error("Could not save live translation history:", error);
-    }
+    for (const item of history) processedIds.current.add(item.id);
   }, [history]);
 
   useEffect(() => {
     const newSegments = finalizedSegments.filter((segment) => {
       if (processedIds.current.has(segment.id)) return false;
-      processedIds.current.add(segment.id);
       return segment.transcript.trim().length > 0;
     });
 
     if (newSegments.length > 0) {
-      setHistory((current) => [...current, ...newSegments]);
+      try {
+        const appendedItems = appendLiveHistory(newSegments);
+        for (const item of appendedItems) processedIds.current.add(item.id);
+        setHistory((current) => [...current, ...appendedItems]);
+      } catch (error) {
+        console.error("Could not save live translation history:", error);
+      }
     }
   }, [finalizedSegments]);
 
@@ -307,43 +287,73 @@ export function LiveTranslationDisplay({
   );
 
   return (
-    <View style={styles.liveArea}>
-      <FlatList
-        ref={listRef}
-        data={history}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        ListEmptyComponent={
-          history.length === 0 && !liveItem ? emptyContent : null
-        }
-        ListFooterComponent={liveFooter}
-        contentContainerStyle={styles.listContent}
-        onScroll={handleScroll}
-        onContentSizeChange={handleContentSizeChange}
-        scrollEventThrottle={16}
-        extraData={copiedItem}
-        keyboardShouldPersistTaps="handled"
-      />
-      {showJumpToLatest && (
+    <View style={styles.container}>
+      <View style={styles.topRow}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Jump to latest transcript"
-          onPress={jumpToLatest}
-          style={[
-            styles.jumpButton,
-            { backgroundColor: theme.panelAlt, borderColor: theme.secondary },
-          ]}
+          accessibilityLabel="Search translations"
+          onPress={onOpenSearch}
+          style={[styles.iconButton, { backgroundColor: theme.panelAlt }]}
         >
-          <Text style={[styles.jumpText, { color: theme.primary }]}>
-            ↓ Latest
-          </Text>
+          <Search color={theme.primary} size={21} strokeWidth={2} />
         </Pressable>
-      )}
+      </View>
+
+      <View style={styles.liveArea}>
+        <FlatList
+          ref={listRef}
+          data={history}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          ListEmptyComponent={
+            history.length === 0 && !liveItem ? emptyContent : null
+          }
+          ListFooterComponent={liveFooter}
+          contentContainerStyle={styles.listContent}
+          onScroll={handleScroll}
+          onContentSizeChange={handleContentSizeChange}
+          scrollEventThrottle={16}
+          extraData={copiedItem}
+          keyboardShouldPersistTaps="handled"
+        />
+        {showJumpToLatest && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Jump to latest transcript"
+            onPress={jumpToLatest}
+            style={[
+              styles.jumpButton,
+              {
+                backgroundColor: theme.panelAlt,
+                borderColor: theme.secondary,
+              },
+            ]}
+          >
+            <Text style={[styles.jumpText, { color: theme.primary }]}>
+              ↓ Latest
+            </Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  topRow: {
+    alignItems: "flex-end",
+    marginTop: 4,
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   liveArea: {
     flex: 1,
     paddingTop: 8,

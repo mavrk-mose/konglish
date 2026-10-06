@@ -17,6 +17,7 @@ export default function RootLayout() {
           <AnimatedSplashOverlay />
           <Stack>
             <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="search" options={{ headerShown: false }} />
           </Stack>
         </ThemeProvider>
       </BottomSheetModalProvider>

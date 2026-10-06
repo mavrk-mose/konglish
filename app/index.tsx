@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router, type Href } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, useColorScheme } from "react-native";
@@ -12,6 +13,7 @@ import {
 import { SettingsSheet } from "@/components/home/settings-sheet";
 import { AppTheme } from "@/constants/theme";
 import { OfflineSetup } from "@/components/offline-setup";
+import { clearLiveHistory } from "@/lib/live-translation-history";
 import { useSpeechTranslation } from "@/hooks/use-speech-translation";
 import { useTranscript } from "@/hooks/use-transcript";
 import { useTranslationModels } from "@/hooks/use-translation-models";
@@ -43,6 +45,7 @@ export default function HomeScreen() {
   );
   const [fontSizeMode, setFontSizeMode] = useState<FontSizeMode>("medium");
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [finalizedSegments, setFinalizedSegments] = useState<TranslationItem[]>(
     [],
   );
@@ -126,6 +129,7 @@ export default function HomeScreen() {
             directionRef.current === "ko-to-en" ? entry.ko : entry.en,
           translation:
             directionRef.current === "ko-to-en" ? entry.en : entry.ko,
+          createdAt: Number.parseInt(entry.id.split("-")[0], 10),
         },
       ]);
     },
@@ -162,13 +166,18 @@ export default function HomeScreen() {
   const handleDeleteAllHistory = () => {
     Alert.alert(
       "Delete all history?",
-      "This action cannot be undone. Only saved completed translations will be removed.",
+      "This action cannot be undone. All saved completed translations will be removed.",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => updateSavedTranscript(() => []),
+          onPress: () => {
+            updateSavedTranscript(() => []);
+            clearLiveHistory();
+            setHistoryVersion((version) => version + 1);
+            setFinalizedSegments([]);
+          },
         },
       ],
     );
@@ -191,6 +200,7 @@ export default function HomeScreen() {
       {speech.isListeningEnabled && <KeepAwakeWhileListening />}
 
       <LiveTranslationDisplay
+        key={historyVersion}
         theme={theme}
         fontSize={FONT_SIZES[fontSizeMode]}
         transcriptText={transcriptText}
@@ -198,6 +208,7 @@ export default function HomeScreen() {
         canCopyTranslation={Boolean(speech.translationText?.trim())}
         hasLiveTranscript={Boolean(speech.sourceText.trim())}
         finalizedSegments={finalizedSegments}
+        onOpenSearch={() => router.push("/search" as Href)}
       />
 
       <ControlBar
