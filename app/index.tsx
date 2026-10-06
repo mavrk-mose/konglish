@@ -5,7 +5,6 @@ import { Alert, StyleSheet, useColorScheme } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ControlBar } from "@/components/home/control-bar";
-import { HistorySheet } from "@/components/home/history-sheet";
 import {
   LiveTranslationDisplay,
   type TranslationItem,
@@ -13,7 +12,6 @@ import {
 import { SettingsSheet } from "@/components/home/settings-sheet";
 import { AppTheme } from "@/constants/theme";
 import { OfflineSetup } from "@/components/offline-setup";
-import { TranscriptEditorModal } from "@/components/transcript-editor-modal";
 import { useSpeechTranslation } from "@/hooks/use-speech-translation";
 import { useTranscript } from "@/hooks/use-transcript";
 import { useTranslationModels } from "@/hooks/use-translation-models";
@@ -44,7 +42,6 @@ export default function HomeScreen() {
     systemTheme === "dark" ? "dark" : "light",
   );
   const [fontSizeMode, setFontSizeMode] = useState<FontSizeMode>("medium");
-  const [historyVisible, setHistoryVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [finalizedSegments, setFinalizedSegments] = useState<TranslationItem[]>(
     [],
@@ -101,16 +98,6 @@ export default function HomeScreen() {
   const {
     entries,
     updateSavedTranscript,
-    editingEntryId,
-    setEditingEntryId,
-    editKoreanText,
-    setEditKoreanText,
-    editEnglishText,
-    setEditEnglishText,
-    isSavingEdit,
-    startEditingEntry,
-    saveEditedEntry,
-    exportSessionLog,
   } = useTranscript();
   const {
     isReady,
@@ -172,10 +159,6 @@ export default function HomeScreen() {
     [speech.translationError, speech.translationText, targetLanguage],
   );
 
-  const handleHistoryExport = async () => {
-    await exportSessionLog("", "", false);
-  };
-
   const handleDeleteAllHistory = () => {
     Alert.alert(
       "Delete all history?",
@@ -215,7 +198,6 @@ export default function HomeScreen() {
         canCopyTranslation={Boolean(speech.translationText?.trim())}
         hasLiveTranscript={Boolean(speech.sourceText.trim())}
         finalizedSegments={finalizedSegments}
-        onOpenHistory={() => setHistoryVisible(true)}
       />
 
       <ControlBar
@@ -232,15 +214,6 @@ export default function HomeScreen() {
         onToggleListening={() => void speech.toggleListening()}
       />
 
-      <HistorySheet
-        visible={historyVisible}
-        entries={entries}
-        theme={theme}
-        onDismiss={() => setHistoryVisible(false)}
-        onExport={handleHistoryExport}
-        onEditEntry={(entry) => startEditingEntry(entry)}
-      />
-
       <SettingsSheet
         visible={settingsVisible}
         theme={theme}
@@ -250,19 +223,8 @@ export default function HomeScreen() {
         onToggleTheme={() =>
           setThemeMode((current) => (current === "dark" ? "light" : "dark"))
         }
-        onSetFontSize={(size) => setFontSizeMode(size)}
+        onSetFontSize={setFontSizeMode}
         onDeleteAllHistory={handleDeleteAllHistory}
-      />
-
-      <TranscriptEditorModal
-        visible={editingEntryId !== null}
-        koreanText={editKoreanText}
-        englishText={editEnglishText}
-        isSaving={isSavingEdit}
-        onChangeKoreanText={setEditKoreanText}
-        onChangeEnglishText={setEditEnglishText}
-        onClose={() => setEditingEntryId(null)}
-        onSave={() => void saveEditedEntry(direction)}
       />
     </SafeAreaView>
   );

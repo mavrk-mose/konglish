@@ -1,5 +1,4 @@
 import * as Clipboard from "expo-clipboard";
-import { History } from "lucide-react-native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -11,6 +10,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { createMMKV } from "react-native-mmkv";
 
 import { AppTheme } from "@/constants/theme";
 
@@ -30,7 +30,6 @@ type LiveTranslationDisplayProps = {
   canCopyTranslation: boolean;
   hasLiveTranscript: boolean;
   finalizedSegments: TranslationItem[];
-  onOpenHistory: () => void;
 };
 
 type TranslationRowProps = {
@@ -43,6 +42,30 @@ type TranslationRowProps = {
 };
 
 const BOTTOM_THRESHOLD = 48;
+const LIVE_HISTORY_STORAGE_KEY = "konglish.live-translation-history";
+const liveHistoryStorage = createMMKV({ id: "konglish-live-history" });
+
+function loadLiveHistory(): TranslationItem[] {
+  try {
+    const savedHistory = liveHistoryStorage.getString(LIVE_HISTORY_STORAGE_KEY);
+    if (!savedHistory) return [];
+
+    const parsedHistory: unknown = JSON.parse(savedHistory);
+    if (!Array.isArray(parsedHistory)) return [];
+
+    return parsedHistory.filter(
+      (item): item is TranslationItem =>
+        typeof item === "object" &&
+        item !== null &&
+        typeof item.id === "string" &&
+        typeof item.transcript === "string" &&
+        typeof item.translation === "string",
+    );
+  } catch (error) {
+    console.warn("Could not load live translation history:", error);
+    return [];
+  }
+}
 
 const TranslationRow = memo(function TranslationRow({
   item,
@@ -110,9 +133,8 @@ export function LiveTranslationDisplay({
   canCopyTranslation,
   hasLiveTranscript,
   finalizedSegments,
-  onOpenHistory,
 }: LiveTranslationDisplayProps) {
-  const [history, setHistory] = useState<TranslationItem[]>([]);
+  const [history, setHistory] = useState<TranslationItem[]>(loadLiveHistory);
   const [copiedItem, setCopiedItem] = useState<{
     id: string;
     translation: string;
@@ -122,6 +144,14 @@ export function LiveTranslationDisplay({
   const processedIds = useRef(new Set<string>());
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldAutoScroll = useRef(true);
+
+  useEffect(() => {
+    try {
+      liveHistoryStorage.set(LIVE_HISTORY_STORAGE_KEY, JSON.stringify(history));
+    } catch (error) {
+      console.error("Could not save live translation history:", error);
+    }
+  }, [history]);
 
   useEffect(() => {
     const newSegments = finalizedSegments.filter((segment) => {
@@ -277,76 +307,43 @@ export function LiveTranslationDisplay({
   );
 
   return (
-    <>
-      <View style={styles.topRow}>
-        <View style={styles.spacer} />
+    <View style={styles.liveArea}>
+      <FlatList
+        ref={listRef}
+        data={history}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
+        ListEmptyComponent={
+          history.length === 0 && !liveItem ? emptyContent : null
+        }
+        ListFooterComponent={liveFooter}
+        contentContainerStyle={styles.listContent}
+        onScroll={handleScroll}
+        onContentSizeChange={handleContentSizeChange}
+        scrollEventThrottle={16}
+        extraData={copiedItem}
+        keyboardShouldPersistTaps="handled"
+      />
+      {showJumpToLatest && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Open history"
-          onPress={onOpenHistory}
-          style={[styles.iconButton, { backgroundColor: theme.panelAlt }]}
+          accessibilityLabel="Jump to latest transcript"
+          onPress={jumpToLatest}
+          style={[
+            styles.jumpButton,
+            { backgroundColor: theme.panelAlt, borderColor: theme.secondary },
+          ]}
         >
-          <History color={theme.primary} size={21} strokeWidth={2} />
+          <Text style={[styles.jumpText, { color: theme.primary }]}>
+            ↓ Latest
+          </Text>
         </Pressable>
-      </View>
-
-      <View style={styles.liveArea}>
-        <FlatList
-          ref={listRef}
-          data={history}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          ListEmptyComponent={
-            history.length === 0 && !liveItem ? emptyContent : null
-          }
-          ListFooterComponent={liveFooter}
-          contentContainerStyle={styles.listContent}
-          onScroll={handleScroll}
-          onContentSizeChange={handleContentSizeChange}
-          scrollEventThrottle={16}
-          extraData={copiedItem}
-          keyboardShouldPersistTaps="handled"
-        />
-        {showJumpToLatest && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Jump to latest transcript"
-            onPress={jumpToLatest}
-            style={[
-              styles.jumpButton,
-              { backgroundColor: theme.panelAlt, borderColor: theme.secondary },
-            ]}
-          >
-            <Text style={[styles.jumpText, { color: theme.primary }]}>
-              ↓ Latest
-            </Text>
-          </Pressable>
-        )}
-      </View>
-    </>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    marginTop: 4,
-  },
-  spacer: {
-    flex: 1,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-  },
   liveArea: {
     flex: 1,
     paddingTop: 8,
