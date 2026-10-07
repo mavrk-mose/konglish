@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Animated, Linking, Platform } from "react-native";
+import { Alert, Animated, Linking } from "react-native";
 
 import TranslateText, {
     TranslateLanguage,
@@ -12,9 +12,21 @@ import {
 import type { TranscriptEntry } from "@/types/transcript";
 import type { TranslationDirection } from "@/types/translation";
 
-const SPEECH_STABILITY_DELAY_MS = 400;
+const SPEECH_STABILITY_DELAY_MS = 700;
 const FINAL_DUPLICATE_WINDOW_MS = 2500;
-const UTTERANCE_SILENCE_MS = 1200;
+const UTTERANCE_SILENCE_MS = 1400;
+const LANGUAGE_CONFIG = {
+  "ko-to-en": {
+    speechLanguage: "ko-KR",
+    sourceLanguage: TranslateLanguage.KOREAN,
+    targetLanguage: TranslateLanguage.ENGLISH,
+  },
+  "en-to-ko": {
+    speechLanguage: "en-US",
+    sourceLanguage: TranslateLanguage.ENGLISH,
+    targetLanguage: TranslateLanguage.KOREAN,
+  },
+} as const;
 
 type SpeechTranslationOptions = {
   enabled: boolean;
@@ -55,6 +67,7 @@ export function useSpeechTranslation({
   );
   const lastTranslatedTextRef = useRef("");
   const lastTranslationResultRef = useRef<{
+    direction: TranslationDirection;
     text: string;
     translation: string;
   } | null>(null);
@@ -63,8 +76,6 @@ export function useSpeechTranslation({
   );
   const recentFinalTextsRef = useRef(new Map<string, number>());
   const transcriptSequenceRef = useRef(initialSequence);
-  const onDeviceRecognitionAvailableRef = useRef<boolean | null>(null);
-  const usingOnDeviceRecognitionRef = useRef(false);
   const startListeningRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
@@ -188,37 +199,6 @@ export function useSpeechTranslation({
       }, delay);
     };
 
-    const canUseOnDeviceKoreanRecognition = async () => {
-      if (Platform.OS !== "android") return false;
-      if (onDeviceRecognitionAvailableRef.current !== null) {
-        return onDeviceRecognitionAvailableRef.current;
-      }
-
-      try {
-        if (!ExpoSpeechRecognitionModule.supportsOnDeviceRecognition()) {
-          onDeviceRecognitionAvailableRef.current = false;
-          return false;
-        }
-
-        const { installedLocales } =
-          await ExpoSpeechRecognitionModule.getSupportedLocales({});
-        onDeviceRecognitionAvailableRef.current = installedLocales.some(
-          (locale) =>
-            locale.toLowerCase().replaceAll("_", "-").startsWith("ko"),
-        );
-      } catch (localeError) {
-        onDeviceRecognitionAvailableRef.current = false;
-        if (__DEV__) {
-          console.warn(
-            "[Speech] Could not check offline Korean model:",
-            localeError,
-          );
-        }
-      }
-
-      return onDeviceRecognitionAvailableRef.current;
-    };
-
     const startListening = async () => {
       if (
         !isMounted ||
@@ -245,27 +225,21 @@ export function useSpeechTranslation({
         if (!hasPermissions) return;
         if (requestedDirection !== directionRef.current) return;
 
-        const requiresOnDeviceRecognition =
-          requestedDirection === "ko-to-en"
-            ? await canUseOnDeviceKoreanRecognition()
-            : false;
         if (!isMounted || !shouldListenRef.current) return;
         if (requestedDirection !== directionRef.current) return;
-        usingOnDeviceRecognitionRef.current = requiresOnDeviceRecognition;
+        const speechLanguage =
+          LANGUAGE_CONFIG[requestedDirection].speechLanguage;
         if (__DEV__) {
-          console.log(
-            `[Speech] Using ${requiresOnDeviceRecognition ? "on-device Korean" : "the default"} recognizer.`,
-          );
+          console.log(`[Speech] recognition language: ${speechLanguage}`);
         }
 
         activeRecognitionDirectionRef.current = requestedDirection;
         ExpoSpeechRecognitionModule.start({
-          lang: requestedDirection === "ko-to-en" ? "ko-KR" : "en-US",
+          lang: speechLanguage,
           interimResults: true,
           continuous: true,
           maxAlternatives: 1,
-          requiresOnDeviceRecognition,
-          addsPunctuation: requiresOnDeviceRecognition,
+          requiresOnDeviceRecognition: false,
           volumeChangeEventOptions: {
             enabled: true,
             intervalMillis: 100,
@@ -321,38 +295,55 @@ export function useSpeechTranslation({
 
     const applyTranslation = (
       requestId: number,
+      translationDirection: TranslationDirection,
       text: string,
       translation: string,
     ) => {
       if (!isMounted || requestId !== translationRequestRef.current) {
         if (__DEV__) {
-          console.log(`[Translation] stale result ignored: ${text}`);
+          console.log(
+            `[Translation] ${translationDirection} stale result ignored: ${text}`,
+          );
         }
         return false;
       }
 
-      lastTranslationResultRef.current = { text, translation };
+      lastTranslationResultRef.current = {
+        direction: translationDirection,
+        text,
+        translation,
+      };
       setTranslationText((current) =>
         current === translation ? current : translation,
       );
       setTranslationError(false);
       if (__DEV__) {
-        console.log(`[Translation] result: ${text} => ${translation}`);
+        console.log(
+          `[Translation] ${translationDirection} result: ${text} => ${translation}`,
+        );
       }
       return true;
     };
 
-    const translateSourceText = async (sourceText: string) => {
+    const translateSourceText = async (
+      sourceText: string,
+      translationDirection: TranslationDirection,
+    ) => {
       const text = sourceText.trim().replace(/\s+/gu, " ");
       if (!text || !enabledRef.current) return null;
 
-      const currentDirection = directionRef.current;
+      const cacheKey = `${translationDirection}:${text}`;
       const requestId = ++translationRequestRef.current;
       setTranslationError(false);
       const cachedTranslation = lastTranslationResultRef.current;
-      if (cachedTranslation?.text === text) {
+      if (
+        cachedTranslation?.direction === translationDirection &&
+        cachedTranslation.text === text
+      ) {
         if (__DEV__) {
-          console.log(`[Translation] skipped duplicate: ${text}`);
+          console.log(
+            `[Translation] ${translationDirection} skipped duplicate: ${text}`,
+          );
         }
         if (isMounted && requestId === translationRequestRef.current) {
           setTranslationText((current) =>
@@ -364,21 +355,32 @@ export function useSpeechTranslation({
         return cachedTranslation.translation;
       }
 
-      const inFlightTranslation = inFlightTranslationsRef.current.get(text);
+      const inFlightTranslation =
+        inFlightTranslationsRef.current.get(cacheKey);
       if (inFlightTranslation) {
         if (__DEV__) {
-          console.log(`[Translation] skipped duplicate: ${text}`);
+          console.log(
+            `[Translation] ${translationDirection} skipped duplicate: ${text}`,
+          );
         }
-        lastTranslatedTextRef.current = text;
+        lastTranslatedTextRef.current = cacheKey;
         try {
           const translation = await inFlightTranslation;
           if (translation !== null) {
-            applyTranslation(requestId, text, translation);
+            applyTranslation(
+              requestId,
+              translationDirection,
+              text,
+              translation,
+            );
           }
           return translation;
         } catch (translationError) {
           if (__DEV__) {
-            console.warn("[Translation] failed:", translationError);
+            console.warn(
+              `[Translation] ${translationDirection} failed:`,
+              translationError,
+            );
           }
           if (requestId === translationRequestRef.current) {
             setTranslationError(true);
@@ -387,45 +389,51 @@ export function useSpeechTranslation({
         }
       }
 
-      lastTranslatedTextRef.current = text;
+      lastTranslatedTextRef.current = cacheKey;
       lastTranslationResultRef.current = null;
       if (__DEV__) {
-        console.log(`[Translation] requested: ${text}`);
+        console.log(
+          `[Translation] ${translationDirection} requested: ${text}`,
+        );
       }
 
       const translationPromise = TranslateText.translate({
         text,
-        sourceLanguage:
-          currentDirection === "ko-to-en"
-            ? TranslateLanguage.KOREAN
-            : TranslateLanguage.ENGLISH,
-        targetLanguage:
-          currentDirection === "ko-to-en"
-            ? TranslateLanguage.ENGLISH
-            : TranslateLanguage.KOREAN,
+        sourceLanguage: LANGUAGE_CONFIG[translationDirection].sourceLanguage,
+        targetLanguage: LANGUAGE_CONFIG[translationDirection].targetLanguage,
         downloadModelIfNeeded: false,
       }).then((result) => result as string);
-      inFlightTranslationsRef.current.set(text, translationPromise);
+      inFlightTranslationsRef.current.set(cacheKey, translationPromise);
 
       try {
         const translation = await translationPromise;
-        applyTranslation(requestId, text, translation);
+        applyTranslation(
+          requestId,
+          translationDirection,
+          text,
+          translation,
+        );
         return translation;
       } catch (translationError) {
         if (
           requestId === translationRequestRef.current &&
-          lastTranslatedTextRef.current === text
+          lastTranslatedTextRef.current === cacheKey
         ) {
           lastTranslatedTextRef.current = "";
         }
-        console.warn("[Translation] failed:", translationError);
+        console.warn(
+          `[Translation] ${translationDirection} failed:`,
+          translationError,
+        );
         if (requestId === translationRequestRef.current) {
           setTranslationError(true);
         }
         return null;
       } finally {
-        if (inFlightTranslationsRef.current.get(text) === translationPromise) {
-          inFlightTranslationsRef.current.delete(text);
+        if (
+          inFlightTranslationsRef.current.get(cacheKey) === translationPromise
+        ) {
+          inFlightTranslationsRef.current.delete(cacheKey);
         }
       }
     };
@@ -451,7 +459,9 @@ export function useSpeechTranslation({
       const duplicateKey = normalizedText.toLowerCase();
       if (recentFinalTextsRef.current.has(duplicateKey)) {
         if (__DEV__) {
-          console.log(`[Translation] skipped duplicate: ${normalizedText}`);
+          console.log(
+            `[Translation] ${resultDirection} skipped duplicate: ${normalizedText}`,
+          );
         }
         return;
       }
@@ -473,14 +483,19 @@ export function useSpeechTranslation({
         utteranceSilenceTimeoutRef.current = null;
       }
       if (__DEV__) {
-        console.log(`[Speech] finalize (${reason}): ${normalizedText}`);
+        console.log(
+          `[Speech] ${resultDirection} finalize (${reason}): ${normalizedText}`,
+        );
       }
 
       const sequence = ++transcriptSequenceRef.current;
       const timestamp = new Date(now).toLocaleTimeString("en-GB", {
         hour12: false,
       });
-      const translation = await translateSourceText(normalizedText);
+      const translation = await translateSourceText(
+        normalizedText,
+        resultDirection,
+      );
       if (
         !isMounted ||
         translation === null ||
@@ -515,7 +530,7 @@ export function useSpeechTranslation({
       }
 
       if (__DEV__) {
-        console.log(`[Speech] interim: ${recognizedText}`);
+        console.log(`[Speech] ${resultDirection} interim: ${recognizedText}`);
       }
       if (pendingInterimTextRef.current === recognizedText) return;
 
@@ -534,12 +549,13 @@ export function useSpeechTranslation({
         if (
           pendingInterimTextRef.current !== recognizedText ||
           latestSourceTextRef.current !== recognizedText ||
-          !shouldListenRef.current
+          !shouldListenRef.current ||
+          directionRef.current !== resultDirection
         ) {
           return;
         }
 
-        void translateSourceText(recognizedText);
+        void translateSourceText(recognizedText, resultDirection);
       }, SPEECH_STABILITY_DELAY_MS);
 
       const endsWithBoundary = /[.!?]$/u.test(recognizedText.trim());
@@ -605,21 +621,7 @@ export function useSpeechTranslation({
         setIsRecording(false);
         soundLevel.setValue(0);
 
-        if (
-          usingOnDeviceRecognitionRef.current &&
-          (event.error === "language-not-supported" ||
-            event.error === "service-not-allowed")
-        ) {
-          usingOnDeviceRecognitionRef.current = false;
-          onDeviceRecognitionAvailableRef.current = false;
-          if (__DEV__) {
-            console.warn(
-              "[Speech] Offline Korean recognition failed; retrying with the default recognizer.",
-            );
-          }
-          setStatus("Switching to the default speech recognizer...");
-          scheduleRestart(100);
-        } else if (event.error === "aborted") {
+        if (event.error === "aborted") {
           if (shouldListenRef.current) scheduleRestart();
         } else if (
           event.error === "no-speech" ||

@@ -120,11 +120,7 @@ const TranslationRow = memo(function TranslationRow({
 
 function useLiveTranslationHistory(finalizedSegments: TranslationItem[]) {
   const [history, setHistory] = useState(() => loadLiveHistory().reverse());
-  const processedIds = useRef<Set<string> | null>(null);
-
-  if (processedIds.current === null) {
-    processedIds.current = new Set(history.map((item) => item.id));
-  }
+  const processedIds = useRef(new Set(history.map((item) => item.id)));
 
   useEffect(() => {
     const processed = processedIds.current;
