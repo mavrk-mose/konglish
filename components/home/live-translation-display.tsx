@@ -43,7 +43,13 @@ type TranslationRowProps = {
   onCopy: (item: TranslationItem) => void;
 };
 
-const BOTTOM_THRESHOLD = 48;
+const LIVE_CURRENT_ID = "live-current";
+const SCROLL_TO_LATEST_THRESHOLD = 48;
+const COPY_CONFIRMATION_DURATION = 1500;
+const MAINTAIN_VISIBLE_CONTENT_POSITION = {
+  minIndexForVisible: 0,
+  autoscrollToTopThreshold: SCROLL_TO_LATEST_THRESHOLD,
+};
 
 const TranslationRow = memo(function TranslationRow({
   item,
@@ -75,7 +81,11 @@ const TranslationRow = memo(function TranslationRow({
           accessibilityLabel={
             isCopied ? "Translation copied" : "Copy translation"
           }
-          accessibilityHint="Copies this translation to the clipboard"
+          accessibilityHint={
+            canCopy
+              ? "Copies this translation to the clipboard"
+              : "Copying is unavailable right now"
+          }
           accessibilityState={{ disabled: !canCopy }}
           disabled={!canCopy}
           onPress={() => onCopy(item)}
@@ -92,16 +102,68 @@ const TranslationRow = memo(function TranslationRow({
           >
             {item.translation}
           </Text>
-          {isCopied && (
-            <Text style={[styles.copiedLabel, { color: theme.secondary }]}>
-              Copied
-            </Text>
-          )}
+          <Text
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+            style={[
+              styles.copiedLabel,
+              { color: theme.secondary, opacity: isCopied ? 1 : 0 },
+            ]}
+          >
+            Copied
+          </Text>
         </Pressable>
       )}
     </View>
   );
 });
+
+function useLiveTranslationHistory(finalizedSegments: TranslationItem[]) {
+  const [history, setHistory] = useState(() => loadLiveHistory().reverse());
+  const processedIds = useRef<Set<string> | null>(null);
+
+  if (processedIds.current === null) {
+    processedIds.current = new Set(history.map((item) => item.id));
+  }
+
+  useEffect(() => {
+    const processed = processedIds.current;
+    if (processed === null) return;
+
+    const seenIds = new Set(processed);
+    const newSegments = finalizedSegments.filter((segment) => {
+      if (
+        segment.id === LIVE_CURRENT_ID ||
+        seenIds.has(segment.id) ||
+        segment.transcript.trim().length === 0
+      ) {
+        return false;
+      }
+
+      seenIds.add(segment.id);
+      return true;
+    });
+
+    if (newSegments.length === 0) return;
+
+    try {
+      const appendedItems = appendLiveHistory(newSegments);
+      for (const segment of newSegments) {
+        processed.add(segment.id);
+      }
+      if (appendedItems.length > 0) {
+        setHistory((current) => [
+          ...appendedItems.slice().reverse(),
+          ...current,
+        ]);
+      }
+    } catch (error) {
+      console.error("Could not save live translation history:", error);
+    }
+  }, [finalizedSegments]);
+
+  return history;
+}
 
 export function LiveTranslationDisplay({
   theme,
@@ -113,78 +175,53 @@ export function LiveTranslationDisplay({
   finalizedSegments,
   onOpenSearch,
 }: LiveTranslationDisplayProps) {
-  // Stored oldest -> newest
-  const [history, setHistory] = useState<TranslationItem[]>(loadLiveHistory);
+  const history = useLiveTranslationHistory(finalizedSegments);
   const [copiedItem, setCopiedItem] = useState<{
     id: string;
     translation: string;
   } | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const listRef = useRef<FlatList<TranslationItem>>(null);
-  const processedIds = useRef(new Set<string>());
+  const showJumpToLatestRef = useRef(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    for (const item of history) processedIds.current.add(item.id);
-  }, [history]);
-
-  useEffect(() => {
-    const newSegments = finalizedSegments.filter((segment) => {
-      if (processedIds.current.has(segment.id)) return false;
-      return segment.transcript.trim().length > 0;
-    });
-
-    if (newSegments.length > 0) {
-      try {
-        const appendedItems = appendLiveHistory(newSegments);
-        for (const item of appendedItems) processedIds.current.add(item.id);
-        setHistory((current) => [...current, ...appendedItems]);
-      } catch (error) {
-        console.error("Could not save live translation history:", error);
-      }
-    }
-  }, [finalizedSegments]);
+  const copyRequestId = useRef(0);
 
   useEffect(
     () => () => {
+      copyRequestId.current += 1;
       if (copyTimeout.current) clearTimeout(copyTimeout.current);
     },
     [],
   );
 
-  // Inverted list renders data[0] at the bottom, so feed it newest-first.
-  const invertedHistory = useMemo(() => [...history].reverse(), [history]);
-
-  const liveItem = useMemo<TranslationItem | null>(() => {
-    if (!hasLiveTranscript || transcriptText.trim().length === 0) return null;
-
-    const latestCompleted = history[history.length - 1];
-    if (
-      latestCompleted?.transcript === transcriptText &&
-      latestCompleted.translation === translatedText
-    ) {
-      return null;
-    }
-
-    return {
-      id: "live-current",
-      transcript: transcriptText,
-      translation: translatedText,
-    };
-  }, [hasLiveTranscript, history, transcriptText, translatedText]);
-
   const copyTranslation = useCallback(async (item: TranslationItem) => {
     if (!item.translation.trim()) return;
 
+    const requestId = ++copyRequestId.current;
+
     try {
       await Clipboard.setStringAsync(item.translation);
-      setCopiedItem({ id: item.id, translation: item.translation });
+      if (copyRequestId.current !== requestId) return;
+
       if (copyTimeout.current) clearTimeout(copyTimeout.current);
-      copyTimeout.current = setTimeout(() => {
-        setCopiedItem(null);
+      setCopiedItem((current) =>
+        current?.id === item.id &&
+        current.translation === item.translation
+          ? current
+          : { id: item.id, translation: item.translation },
+      );
+      const timeout = setTimeout(() => {
+        if (copyTimeout.current !== timeout) return;
+        setCopiedItem((current) =>
+          current?.id === item.id && current.translation === item.translation
+            ? null
+            : current,
+        );
         copyTimeout.current = null;
-      }, 1500);
+      }, COPY_CONFIRMATION_DURATION);
+      copyTimeout.current = timeout;
     } catch (error) {
+      if (copyRequestId.current !== requestId) return;
       console.error("Failed to copy translation", error);
       Alert.alert("Couldn't copy translation", "Please try again.");
     }
@@ -196,16 +233,34 @@ export function LiveTranslationDisplay({
         item={item}
         theme={theme}
         fontSize={fontSize}
-        canCopy
+        canCopy={canCopyTranslation}
         isCopied={
           copiedItem?.id === item.id &&
-          copiedItem?.translation === item.translation
+          copiedItem.translation === item.translation
         }
         onCopy={copyTranslation}
       />
     ),
-    [copiedItem, copyTranslation, fontSize, theme],
+    [canCopyTranslation, copiedItem, copyTranslation, fontSize, theme],
   );
+
+  const liveItem = useMemo<TranslationItem | null>(() => {
+    if (!hasLiveTranscript || transcriptText.trim().length === 0) return null;
+
+    const latestCompleted = history[0];
+    if (
+      latestCompleted?.transcript === transcriptText &&
+      latestCompleted.translation === translatedText
+    ) {
+      return null;
+    }
+
+    return {
+      id: LIVE_CURRENT_ID,
+      transcript: transcriptText,
+      translation: translatedText,
+    };
+  }, [hasLiveTranscript, history, transcriptText, translatedText]);
 
   // In an inverted list the "header" is visually at the bottom: this is the
   // live transcript, or the "Speak ... to begin" prompt when nothing is live.
@@ -271,9 +326,11 @@ export function LiveTranslationDisplay({
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       // Inverted: offset 0 is the bottom (latest).
-      setShowJumpToLatest(
-        event.nativeEvent.contentOffset.y > BOTTOM_THRESHOLD,
-      );
+      const shouldShowJumpButton =
+        event.nativeEvent.contentOffset.y > SCROLL_TO_LATEST_THRESHOLD;
+      if (showJumpToLatestRef.current === shouldShowJumpButton) return;
+      showJumpToLatestRef.current = shouldShowJumpButton;
+      setShowJumpToLatest(shouldShowJumpButton);
     },
     [],
   );
@@ -299,23 +356,19 @@ export function LiveTranslationDisplay({
         <FlatList
           ref={listRef}
           inverted
-          data={invertedHistory}
+          data={history}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={liveHeader}
           contentContainerStyle={styles.listContent}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          extraData={copiedItem}
           keyboardShouldPersistTaps="handled"
           initialNumToRender={12}
           windowSize={7}
           // Stay pinned to the latest entry if you're at the bottom, but
           // don't yank you down while you're reading older entries.
-          maintainVisibleContentPosition={{
-            minIndexForVisible: 0,
-            autoscrollToTopThreshold: BOTTOM_THRESHOLD,
-          }}
+          maintainVisibleContentPosition={MAINTAIN_VISIBLE_CONTENT_POSITION}
         />
         {showJumpToLatest && (
           <Pressable
