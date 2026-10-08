@@ -31,6 +31,8 @@ type LiveTranslationDisplayProps = {
   canCopyTranslation: boolean;
   hasLiveTranscript: boolean;
   finalizedSegments: TranslationItem[];
+  translationId?: string;
+  onTranslationFocusHandled: () => void;
   onOpenSearch: () => void;
 };
 
@@ -169,6 +171,8 @@ export function LiveTranslationDisplay({
   canCopyTranslation,
   hasLiveTranscript,
   finalizedSegments,
+  translationId,
+  onTranslationFocusHandled,
   onOpenSearch,
 }: LiveTranslationDisplayProps) {
   const history = useLiveTranslationHistory(finalizedSegments);
@@ -181,11 +185,37 @@ export function LiveTranslationDisplay({
   const showJumpToLatestRef = useRef(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyRequestId = useRef(0);
+  const scrollRetryCount = useRef(0);
+  const pendingScrollIndex = useRef<number | null>(null);
+  const scrollRetryTimeout = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!translationId) return;
+
+    const index = history.findIndex((item) => item.id === translationId);
+    if (index < 0) return;
+
+    if (scrollRetryTimeout.current) {
+      clearTimeout(scrollRetryTimeout.current);
+      scrollRetryTimeout.current = null;
+    }
+    pendingScrollIndex.current = index;
+    scrollRetryCount.current = 0;
+    listRef.current?.scrollToIndex({
+      index,
+      animated: true,
+      viewPosition: 0.5,
+    });
+    onTranslationFocusHandled();
+  }, [history, onTranslationFocusHandled, translationId]);
 
   useEffect(
     () => () => {
       copyRequestId.current += 1;
       if (copyTimeout.current) clearTimeout(copyTimeout.current);
+      if (scrollRetryTimeout.current) clearTimeout(scrollRetryTimeout.current);
     },
     [],
   );
@@ -229,7 +259,7 @@ export function LiveTranslationDisplay({
         item={item}
         theme={theme}
         fontSize={fontSize}
-        canCopy={canCopyTranslation}
+        canCopy={Boolean(item.translation.trim())}
         isCopied={
           copiedItem?.id === item.id &&
           copiedItem.translation === item.translation
@@ -237,7 +267,7 @@ export function LiveTranslationDisplay({
         onCopy={copyTranslation}
       />
     ),
-    [canCopyTranslation, copiedItem, copyTranslation, fontSize, theme],
+    [copiedItem, copyTranslation, fontSize, theme],
   );
 
   const liveItem = useMemo<TranslationItem | null>(() => {
@@ -335,6 +365,33 @@ export function LiveTranslationDisplay({
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
 
+  const handleScrollToIndexFailed = useCallback(
+    (info: { index: number; averageItemLength: number }) => {
+      if (
+        pendingScrollIndex.current !== info.index ||
+        scrollRetryCount.current >= 2
+      ) {
+        return;
+      }
+
+      scrollRetryCount.current += 1;
+      listRef.current?.scrollToOffset({
+        offset: info.averageItemLength * info.index,
+        animated: false,
+      });
+      scrollRetryTimeout.current = setTimeout(() => {
+        scrollRetryTimeout.current = null;
+        if (pendingScrollIndex.current !== info.index) return;
+        listRef.current?.scrollToIndex({
+          index: info.index,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      }, 100);
+    },
+    [],
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.topRow}>
@@ -358,6 +415,7 @@ export function LiveTranslationDisplay({
           ListHeaderComponent={liveHeader}
           contentContainerStyle={styles.listContent}
           onScroll={handleScroll}
+          onScrollToIndexFailed={handleScrollToIndexFailed}
           scrollEventThrottle={16}
           keyboardShouldPersistTaps="handled"
           initialNumToRender={12}

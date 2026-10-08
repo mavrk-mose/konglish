@@ -47,10 +47,12 @@ function SearchResult({
   item,
   query,
   theme,
+  onPress,
 }: {
   item: TranslationItem;
   query: string;
   theme: (typeof AppTheme)[keyof typeof AppTheme];
+  onPress: () => void;
 }) {
   const text = getSearchableText(item, query);
   const normalizedText = text.toLocaleLowerCase();
@@ -77,7 +79,12 @@ function SearchResult({
       : "";
 
   return (
-    <View style={[styles.result, { borderBottomColor: theme.border }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Open translation: ${text}`}
+      onPress={onPress}
+      style={[styles.result, { borderBottomColor: theme.border }]}
+    >
       <Text
         numberOfLines={2}
         style={[styles.resultText, { color: theme.primary }]}
@@ -93,7 +100,7 @@ function SearchResult({
       <Text style={[styles.timestamp, { color: theme.muted }]}>
         {getTimestamp(item)}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -147,7 +154,18 @@ export default function SearchScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: TranslationItem }) => (
-      <SearchResult item={item} query={query.trim()} theme={theme} />
+      <SearchResult
+        item={item}
+        query={query.trim()}
+        theme={theme}
+        onPress={() => {
+          Keyboard.dismiss();
+          router.navigate({
+            pathname: "/",
+            params: { translationId: item.id },
+          });
+        }}
+      />
     ),
     [query, theme],
   );

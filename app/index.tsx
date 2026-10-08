@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router, type Href } from "expo-router";
+import { router, useLocalSearchParams, type Href } from "expo-router";
 import { useKeepAwake } from "expo-keep-awake";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, useColorScheme } from "react-native";
@@ -38,6 +38,9 @@ const FONT_SIZES: Record<FontSizeMode, number> = {
 };
 
 export default function HomeScreen() {
+  const { translationId } = useLocalSearchParams<{
+    translationId?: string;
+  }>();
   const systemTheme = useColorScheme();
   const [direction, setDirection] = useState<TranslationDirection>("ko-to-en");
   const [themeMode, setThemeMode] = useState<ThemeMode>(() =>
@@ -51,6 +54,10 @@ export default function HomeScreen() {
   );
   const directionRef = useRef(direction);
   const theme = AppTheme[themeMode];
+
+  const handleTranslationFocusHandled = useCallback(() => {
+    router.setParams({ translationId: undefined });
+  }, []);
 
   useEffect(() => {
     directionRef.current = direction;
@@ -208,6 +215,8 @@ export default function HomeScreen() {
         canCopyTranslation={Boolean(speech.translationText?.trim())}
         hasLiveTranscript={Boolean(speech.sourceText.trim())}
         finalizedSegments={finalizedSegments}
+        translationId={translationId}
+        onTranslationFocusHandled={handleTranslationFocusHandled}
         onOpenSearch={() => router.push("/search" as Href)}
       />
 
